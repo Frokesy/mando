@@ -19,7 +19,7 @@ export default {
         },
         secondary: {
           50: '#f5f3ff',
-          100: '#ede9fe',
+          100: '#A4A4A4',
           200: '#ddd6fe',
           300: '#c4b5fd',
           400: '#a78bfa',

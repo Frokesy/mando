@@ -1,9 +1,12 @@
-import React from 'react'
+import React from "react";
+import Onboarding from "./onboarding/page";
 
 const Home = () => {
   return (
-    <div>Home</div>
-  )
-}
+    <div className="">
+      <Onboarding />
+    </div>
+  );
+};
 
-export default Home
+export default Home;
