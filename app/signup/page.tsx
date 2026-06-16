@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import Link from "next/link";
-import { CautionIcon, PasswordIcon } from "../../components/svgs/DefaultIcons";
+import { CautionIcon, PasswordIcon, EyeIcon, EyeOffIcon } from "../../components/svgs/DefaultIcons";
 
 export default function Signup() {
   const router = useRouter();
@@ -17,6 +17,7 @@ export default function Signup() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [agree, setAgree] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const setFieldError = (field: string, msg: string) => {
     setFieldErrors((prev) => ({ ...prev, [field]: msg }));
@@ -158,18 +159,28 @@ export default function Signup() {
           </div>
 
           <div>
-            <label className="flex items-center gap-2 text-sm font-medium text-black mb-2">
-              <PasswordIcon />
-              <span>Password</span>
-            </label>
-            <input
-              type="password"
-              name="password"
-              value={formData.password}
-              onChange={handleChange}
-              placeholder="Create a password"
-              className="w-full p-4 border border-[#E9EAEB] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#DFB400] text-black placeholder-[#A4A4A4]"
-            />
+            <label className="block text-sm font-medium text-black mb-2">Password</label>
+            <div className="relative">
+              <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                <PasswordIcon />
+              </div>
+              <input
+                type={showPassword ? "text" : "password"}
+                name="password"
+                value={formData.password}
+                onChange={handleChange}
+                placeholder="Create a password"
+                className="w-full p-4 pl-10 pr-10 border border-[#E9EAEB] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#DFB400] text-black placeholder-[#A4A4A4]"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((s) => !s)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                className="absolute right-3 top-1/2 -translate-y-1/2"
+              >
+                {showPassword ? <EyeOffIcon /> : <EyeIcon />}
+              </button>
+            </div>
 
             {/* Live validation checker */}
             <div className="mt-2 space-y-1 text-sm">
