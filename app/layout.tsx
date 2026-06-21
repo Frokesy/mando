@@ -33,7 +33,7 @@ export default function RootLayout({
         <link rel="manifest" href="/manifest.webmanifest" />
         <meta name="theme-color" content="#ffffff" />
       </head>
-      <body className="min-h-full flex items-center justify-center bg-gray-50">
+      <body className="min-h-screen flex flex-col items-center justify-start">
         <div className="w-full max-w-[420px] min-h-screen mx-auto bg-white">
           {children}
         </div>
