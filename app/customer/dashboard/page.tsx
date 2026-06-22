@@ -1,5 +1,6 @@
 import ComboCard from "@/components/cards/ComboCard";
 import BottomNav from "@/components/BottomNav";
+import Link from "next/link";
 import {
   LocationIcon,
   NotificationIcon,
@@ -11,7 +12,7 @@ const Dashboard = () => {
     <div className="p-6 pb-28">
       {/* Header */}
       <div className="flex justify-between items-center ">
-        <div className="flex items-center space-x-3">
+        <Link href="/customer/address" className="flex items-center space-x-3">
           <div className="w-[43px] h-[47px] flex items-center justify-center bg-[#F7F7F7] rounded-md">
             <LocationIcon />
           </div>
@@ -21,7 +22,7 @@ const Dashboard = () => {
               123 Ajose Adeogun Street...
             </h2>
           </div>
-        </div>
+        </Link>
 
         <div className="bg-[#FFDB431A] w-[49px] h-[49px] rounded-full flex items-center justify-center">
           <NotificationIcon />
