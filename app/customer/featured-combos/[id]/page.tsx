@@ -1,9 +1,12 @@
 "use client";
 
+import React, { useMemo, useState } from "react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useCartStore } from "@/store/cartStore";
+import { useToastStore } from "@/store/toastStore";
 import { ArrowLeftIcon } from "@/components/svgs/DefaultIcons";
 import { FaStar } from "react-icons/fa";
+import BottomNav from "@/components/BottomNav";
 
 const COMBOS = [
   {
@@ -51,8 +54,9 @@ const MEAL_OPTIONS = [
   { id: "plantain", label: "Plantain", price: 500 },
 ];
 
-const ComboDetails = ({ params }: { params: { id: string } }) => {
-  const combo = COMBOS.find((item) => item.id === params.id) ?? COMBOS[0];
+const ComboDetails = ({ params }: { params: Promise<{ id: string }> }) => {
+  const { id } = React.use(params);
+  const combo = COMBOS.find((item) => item.id === id) ?? COMBOS[0];
   const initialQuantities = useMemo(
     () =>
       MEAL_OPTIONS.reduce(
@@ -75,6 +79,9 @@ const ComboDetails = ({ params }: { params: { id: string } }) => {
     0,
   );
   const total = subTotal * extraPlates;
+
+  const addItem = useCartStore((s) => s.addItem);
+  const showToast = useToastStore((s) => s.showToast);
 
   const toggleMeal = (mealId: string) => {
     setQuantities((current) => ({
@@ -224,9 +231,22 @@ const ComboDetails = ({ params }: { params: { id: string } }) => {
       <button
         type="button"
         className="w-full mt-10 rounded-xl bg-[#DFB400] py-4 text-[16px] font-semibold text-white shadow-lg shadow-[#DFB400]/20"
+        onClick={() => {
+          addItem({
+            id: combo.id,
+            image: "/test-img-one.png",
+            restaurantName: combo.restaurant,
+            comboName: combo.comboName,
+            quantity: 1,
+            price: total,
+          });
+          showToast("Added to cart successfully");
+        }}
       >
         Add to cart
       </button>
+
+      <BottomNav />
     </div>
   );
 };

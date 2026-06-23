@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import ServiceWorkerRegister from "../components/ServiceWorkerRegister";
+import ToastContainer from "@/components/ToastContainer";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -37,6 +38,7 @@ export default function RootLayout({
         <div className="w-full max-w-[420px] min-h-screen mx-auto bg-white">
           {children}
         </div>
+        <ToastContainer />
         <ServiceWorkerRegister />
       </body>
     </html>

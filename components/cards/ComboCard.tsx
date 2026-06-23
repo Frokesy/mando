@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { StarIcon } from "../svgs/DefaultIcons";
 
 type ComboCardProps = {
@@ -6,6 +7,7 @@ type ComboCardProps = {
   vendor?: string;
   rating?: string;
   imgUrl?: string;
+  href?: string;
 };
 
 const ComboCard = ({
@@ -14,9 +16,10 @@ const ComboCard = ({
   vendor = "Mama Chef Cafe",
   rating = "4.5(65k)",
   imgUrl = "/dummy-img.jpg",
+  href,
 }: ComboCardProps) => {
-  return (
-    <div>
+  const cardContent = (
+    <>
       <div
         className="h-[194px] bg-cover bg-center relative rounded-lg"
         style={{ backgroundImage: `url(${imgUrl})` }}
@@ -28,24 +31,34 @@ const ComboCard = ({
           </div>
 
           <div className="flex justify-end">
-            <button className="bg-white uppercase border-3 border-[#DFB400] text-[#DFB400] font-semibold py-2 px-6 rounded-lg hover:bg-[#f0f0f0]">
+            <span className="bg-white uppercase border-3 border-[#DFB400] text-[#DFB400] font-semibold py-2 px-6 rounded-lg hover:bg-[#f0f0f0]">
               Add
-            </button>
+            </span>
           </div>
         </div>
       </div>
 
       <div className="mt-4">
-        <button className="bg-[#DFB400] text-[#000000] font-semibold py-2 px-4 rounded-lg hover:bg-[#e6d400] shadow-[0_32px_64px_rgba(223,180,0,0.45)] transform transition-all hover:-translate-y-1">
+        <span className="bg-[#DFB400] text-[#000000] font-semibold py-2 px-4 rounded-lg shadow-[0_32px_64px_rgba(223,180,0,0.45)] inline-block">
           {price}
-        </button>
+        </span>
 
         <p className="text-[16px] font-semibold mt-2">{title}</p>
-        <button className="text-[#4D00FF] my-2 bg-[#4D00FF1A] text-[13px] font-semibold py-1 px-3 rounded-lg">
+        <span className="text-[#4D00FF] my-2 bg-[#4D00FF1A] text-[13px] font-semibold py-1 px-3 rounded-lg inline-block">
           {vendor}
-        </button>
+        </span>
       </div>
-    </div>
+    </>
+  );
+
+  if (!href) {
+    return <div>{cardContent}</div>;
+  }
+
+  return (
+    <Link href={href} className="block">
+      {cardContent}
+    </Link>
   );
 };
 

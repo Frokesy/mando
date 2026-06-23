@@ -8,6 +8,9 @@ import {
   TimerIcon,
 } from "@/components/svgs/DefaultIcons";
 import { FaStar } from "react-icons/fa";
+import { useCartStore } from "@/store/cartStore";
+import { useToastStore } from "@/store/toastStore";
+import BottomNav from "@/components/BottomNav";
 
 const MEAL_OPTIONS = [
   { id: "jollof", label: "Jollof Rice", price: 1200 },
@@ -53,6 +56,9 @@ const RestaurantDetailsClient = ({ restaurant }: RestaurantDetailsProps) => {
   );
 
   const total = subTotal * extraPlates;
+
+  const addItem = useCartStore((s) => s.addItem);
+  const showToast = useToastStore((s) => s.showToast);
 
   const toggleMeal = (mealId: string) => {
     setQuantities((current) => ({
@@ -244,9 +250,22 @@ const RestaurantDetailsClient = ({ restaurant }: RestaurantDetailsProps) => {
       <button
         type="button"
         className="w-full rounded-xl bg-[#DFB400] py-4 text-[16px] font-semibold text-white shadow-lg shadow-[#DFB400]/20 mt-10"
+        onClick={() => {
+          addItem({
+            id: restaurant.id,
+            image: "/test-img-one.png",
+            restaurantName: restaurant.name,
+            comboName: `${selectedMeals.map((m) => m.label).join(", ")}` || "Meal",
+            quantity: 1,
+            price: total,
+          });
+          showToast("Added to cart successfully");
+        }}
       >
         Add to cart
       </button>
+
+      <BottomNav />
     </div>
   );
 };

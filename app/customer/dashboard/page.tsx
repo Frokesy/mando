@@ -74,6 +74,7 @@ const Dashboard = () => {
               title={combo.title}
               price={combo.price}
               vendor={combo.vendor}
+              href={`/customer/featured-combos/${combo.id}`}
             />
           ))}
         </div>
