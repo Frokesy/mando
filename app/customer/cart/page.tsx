@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { ArrowLeftIcon } from "@/components/svgs/DefaultIcons";
 import useCartStore from "@/store/cartStore";
 import BottomNav from "@/components/BottomNav";
@@ -9,6 +10,10 @@ const CartPage = () => {
   const items = useCartStore((s) => s.items);
   const total = useCartStore((s) => s.total)();
   const deliveryAddress = useCartStore((s) => s.deliveryAddress);
+  const phoneNumber = useCartStore((s) => s.phoneNumber);
+  const setPhoneNumber = useCartStore((s) => s.setPhoneNumber);
+  const [showPhoneModal, setShowPhoneModal] = useState(false);
+  const [inputPhone, setInputPhone] = useState(phoneNumber);
 
   return (
     <div className="p-4 pb-24 space-y-6">
@@ -31,9 +36,12 @@ const CartPage = () => {
             <Link href="/customer/cart/change-address" className="underline text-[#DFB400]">
               Change address
             </Link>
-            <Link href="#" className="underline text-[#DFB400]">
+            <button
+              onClick={() => setShowPhoneModal(true)}
+              className="underline text-[#DFB400] bg-transparent border-0 cursor-pointer"
+            >
               Add phone number
-            </Link>
+            </button>
           </div>
         </div>
       </section>
@@ -86,6 +94,37 @@ const CartPage = () => {
       </section>
 
       <BottomNav />
+
+      {/* Phone Number Modal */}
+      {showPhoneModal && (
+        <div className="fixed inset-0 bg-black/50 z-40" onClick={() => setShowPhoneModal(false)} />
+      )}
+
+      <div
+        className={`fixed bottom-0 left-0 right-0 bg-white rounded-t-2xl p-6 z-50 transition-transform duration-300 ${
+          showPhoneModal ? "translate-y-0" : "translate-y-full"
+        }`}
+      >
+        <div className="space-y-4">
+          <h3 className="text-[20px] font-semibold">Add phone number</h3>
+          <input
+            type="tel"
+            value={inputPhone}
+            onChange={(e) => setInputPhone(e.target.value)}
+            placeholder="Enter your phone number"
+            className="w-full border border-gray-300 rounded-md p-4 text-[14px] focus:outline-none focus:border-[#DFB400]"
+          />
+          <button
+            onClick={() => {
+              setPhoneNumber(inputPhone);
+              setShowPhoneModal(false);
+            }}
+            className="w-full bg-[#DFB400] text-white font-semibold py-4 rounded-md"
+          >
+            Save
+          </button>
+        </div>
+      </div>
     </div>
   );
 };

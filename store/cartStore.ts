@@ -12,17 +12,20 @@ export type CartItem = {
 type CartState = {
   items: CartItem[];
   deliveryAddress: string;
+  phoneNumber: string;
   addItem: (item: CartItem) => void;
   removeItem: (id: string) => void;
   updateQuantity: (id: string, quantity: number) => void;
   clear: () => void;
   setDeliveryAddress: (address: string) => void;
+  setPhoneNumber: (phone: string) => void;
   total: () => number;
 };
 
 export const useCartStore = create<CartState>((set, get) => ({
   items: [],
   deliveryAddress: "No 12, Example Street, Lagos",
+  phoneNumber: "",
   addItem: (item) =>
     set((state) => {
       const exists = state.items.find((i) => i.id === item.id);
@@ -40,6 +43,7 @@ export const useCartStore = create<CartState>((set, get) => ({
     set((s) => ({ items: s.items.map((i) => (i.id === id ? { ...i, quantity } : i)) })),
   clear: () => set({ items: [] }),
   setDeliveryAddress: (address) => set({ deliveryAddress: address }),
+  setPhoneNumber: (phone) => set({ phoneNumber: phone }),
   total: () => get().items.reduce((sum, i) => sum + i.price * i.quantity, 0),
 }));
 
