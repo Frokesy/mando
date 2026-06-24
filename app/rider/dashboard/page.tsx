@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
+import { FiRefreshCw } from "react-icons/fi";
 import RiderBottomNav from "@/components/RiderBottomNav";
-import { CashBundleIcon, CopyIcon, TimerIcon } from "@/components/svgs/DefaultIcons";
+import { CashBundleIcon, MoneyIcon, TimerIcon } from "@/components/svgs/DefaultIcons";
 import { useToastStore } from "@/store/toastStore";
 
 export default function RiderDashboard() {
@@ -15,6 +16,7 @@ export default function RiderDashboard() {
     { id: "R-090", restaurant: "Gidado's", completedAt: "12 Jun 2026", earnings: "₦1,800" },
     { id: "R-089", restaurant: "Bella's", completedAt: "10 Jun 2026", earnings: "₦2,100" },
   ]);
+  const [earnings] = useState("₦3,900");
   const showToast = useToastStore((s) => s.showToast);
 
   return (
@@ -35,19 +37,36 @@ export default function RiderDashboard() {
           </div>
         </header>
 
-        <section className="mb-6 rounded-[28px] bg-white p-5 shadow-sm border border-gray-200">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-sm text-[#6B6B6B]">Assigned jurisdiction</p>
-              <p className="mt-2 text-lg font-semibold text-[#141B34]">Modomo</p>
+        <section className="mb-6 grid gap-4 sm:grid-cols-2">
+          <div className="rounded-[28px] bg-white p-5 shadow-sm border border-gray-200">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm text-[#6B6B6B]">Total earnings</p>
+                <p className="mt-2 text-3xl font-bold text-[#141B34]">{earnings}</p>
+              </div>
+              <div className="rounded-3xl bg-[#F7F4E3] p-3">
+                <MoneyIcon />
+              </div>
             </div>
-            <button
-              type="button"
-              className="rounded-2xl bg-[#141B34] px-5 py-3 text-sm font-semibold text-white"
-              onClick={() => showToast("Orders refreshed", "success")}
-            >
-              Refresh orders
-            </button>
+            <p className="mt-4 text-sm text-[#A4A4A4]">Completed delivery payouts</p>
+          </div>
+
+          <div className="rounded-[28px] bg-white p-5 shadow-sm border border-gray-200">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm text-[#6B6B6B]">Assigned jurisdiction</p>
+                <p className="mt-2 text-lg font-semibold text-[#141B34]">Modomo</p>
+              </div>
+              <button
+                type="button"
+                aria-label="Refresh orders"
+                title="Refresh orders"
+                className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-[#141B34] text-white transition hover:bg-[#27304F] focus:outline-none focus:ring-2 focus:ring-[#DFB400] focus:ring-offset-2"
+                onClick={() => showToast("Orders refreshed", "success")}
+              >
+                <FiRefreshCw className="h-5 w-5" aria-hidden="true" />
+              </button>
+            </div>
           </div>
         </section>
 
