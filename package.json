@@ -2,11 +2,22 @@
   "name": "mando",
   "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "dev": "next dev --webpack",
+    "dev:web": "next dev --webpack",
+    "dev:api": "npm run dev -w apps/api",
     "build": "next build",
+    "build:web": "next build",
+    "build:api": "npm run build -w apps/api",
     "start": "next start",
-    "lint": "eslint"
+    "start:web": "next start",
+    "start:api": "npm run start -w apps/api",
+    "lint": "eslint",
+    "lint:api": "npm run lint -w apps/api"
   },
   "dependencies": {
     "framer-motion": "^12.40.0",
