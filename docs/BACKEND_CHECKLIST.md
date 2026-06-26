@@ -118,7 +118,7 @@
 ## Frontend Integration
 
 - [ ] Replace login TODO with real auth call.
-- [ ] Replace signup TODO with real auth call.
+- [x] Replace signup TODO with real auth call.
 - [ ] Replace forgot-password flow with real provider flow.
 - [ ] Replace static restaurant arrays with API/database data.
 - [ ] Replace static combo arrays with API/database data.
@@ -139,7 +139,7 @@
 - [x] Configure local Postgres or a free managed Postgres database for development.
 - [x] Configure API `DATABASE_URL`.
 - [x] Configure API auth/session secrets locally in `apps/api/.env`.
-- [ ] Configure frontend API base URL.
+- [x] Configure frontend API base URL.
 - [ ] Configure production environment variables on the deployment host.
 - [ ] Run `npm run lint`.
 - [ ] Run `npm run build`.

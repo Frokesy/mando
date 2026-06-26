@@ -5,9 +5,14 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { CautionIcon, PasswordIcon, EyeIcon, EyeOffIcon } from "../../components/svgs/DefaultIcons";
+import { useToastStore } from "@/store/toastStore";
+
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
 
 export default function Signup() {
   const router = useRouter();
+  const showToast = useToastStore((s) => s.showToast);
   const [formData, setFormData] = useState({
     fullName: "",
     email: "",
@@ -56,19 +61,30 @@ export default function Signup() {
     setError("");
     setLoading(true);
 
-    // Basic validation per-field
+    let hasValidationError = false;
+
     if (!formData.fullName) {
       setFieldError("fullName", "Full name is required");
+      hasValidationError = true;
     }
     if (!formData.email) {
       setFieldError("email", "Email is required");
+      hasValidationError = true;
     }
     if (!formData.password) {
       setFieldError("password", "Password is required");
+      hasValidationError = true;
+    }
+
+    if (hasValidationError) {
+      showToast("Please fill in all required fields", "error");
+      setLoading(false);
+      return;
     }
 
     if (!agree) {
       setFieldError("terms", "You must agree to MANDO's terms and conditions");
+      showToast("You must agree to MANDO's terms and conditions", "error");
       setLoading(false);
       return;
     }
@@ -76,21 +92,39 @@ export default function Signup() {
     const criteria = passwordCriteria(formData.password);
     if (!criteria.length || !criteria.number || !criteria.uppercase) {
       setFieldError("password", "Password does not meet requirements");
-      setLoading(false);
-      return;
-    }
-
-    if (!formData.fullName || !formData.email || !formData.password) {
+      showToast("Password does not meet requirements", "error");
       setLoading(false);
       return;
     }
 
     try {
-      // TODO: Replace with actual API call
-      console.log("Signup attempt:", formData);
-      // router.push("/dashboard");
+      const response = await fetch(`${API_BASE_URL}/auth/signup`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify(formData),
+      });
+      const result = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        if (response.status === 409) {
+          setFieldError("email", "An account with this email already exists");
+        }
+
+        throw new Error(result?.message ?? "Signup failed. Please try again.");
+      }
+
+      showToast("Account created successfully", "success");
+      await new Promise((resolve) => window.setTimeout(resolve, 1200));
+      router.push("/customer/dashboard");
     } catch (err) {
-      setError("Signup failed. Please try again.");
+      const message =
+        err instanceof Error ? err.message : "Signup failed. Please try again.";
+
+      setError(message);
+      showToast(message, "error");
     } finally {
       setLoading(false);
     }
@@ -112,11 +146,6 @@ export default function Signup() {
         </p>
 
         <form onSubmit={handleSubmit} className="mt-8 space-y-4">
-          {error && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
-              {error}
-            </div>
-          )}
 
           <div>
             <label className="block text-sm font-medium text-black mb-2">
