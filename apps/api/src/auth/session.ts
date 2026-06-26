@@ -30,3 +30,23 @@ export function hashSessionToken(token: string): string {
 export function isSessionExpired(expiresAt: Date, now = new Date()) {
   return expiresAt.getTime() <= now.getTime()
 }
+export function serializeSessionCookie(session: SessionToken) {
+  const { sessionCookieName } = getAuthConfig()
+  const maxAgeSeconds = Math.max(
+    0,
+    Math.floor((session.expiresAt.getTime() - Date.now()) / 1000),
+  )
+  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : ''
+
+  return [
+    `${sessionCookieName}=${session.token}`,
+    'HttpOnly',
+    'Path=/',
+    'SameSite=Lax',
+    `Max-Age=${maxAgeSeconds}`,
+    `Expires=${session.expiresAt.toUTCString()}`,
+    secure,
+  ]
+    .filter(Boolean)
+    .join('; ')
+}

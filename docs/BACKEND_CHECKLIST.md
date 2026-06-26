@@ -10,7 +10,7 @@
 - [x] Use a provider-flexible setup for Postgres so development can start on free resources and production can move to Neon paid, RDS, Cloud SQL, or another managed Postgres without rewriting the app.
 - [x] Use Drizzle ORM for database schema, migrations, and typed queries.
 - [ ] Keep shared types and validation schemas in a shared package, likely `packages/shared`.
-- [ ] Use custom backend-owned auth/session logic or an auth library that stores state in Postgres.
+- [x] Use custom backend-owned auth/session logic or an auth library that stores state in Postgres.
 - [ ] Use Next.js Route Handlers only as a light frontend-facing proxy if needed, not as the core business backend.
 
 ## Workspace Structure
@@ -38,38 +38,38 @@
 ## Data Model
 
 - [x] Define the core entities, relationships, statuses, and data ownership rules.
-- [ ] Create `users`, `user_roles`, `auth_sessions`, and `verification_tokens`.
-- [ ] Create `profiles` linked to auth users.
-- [ ] Create `service_areas`.
-- [ ] Create `addresses` for customer delivery locations.
-- [ ] Create `staff_onboarding_records`.
-- [ ] Create `rider_profiles`, `sales_agent_profiles`, and `restaurant_members`.
-- [ ] Create encrypted `payout_accounts`.
-- [ ] Create `restaurants`.
-- [ ] Create `menu_items`.
-- [ ] Create `combos`.
-- [ ] Create `combo_items` if combos are composed from menu items.
+- [x] Create `users`, `user_roles`, `auth_sessions`, and `verification_tokens`.
+- [x] Create `profiles` linked to auth users.
+- [x] Create `service_areas`.
+- [x] Create `addresses` for customer delivery locations.
+- [x] Create `staff_onboarding_records`.
+- [x] Create `rider_profiles`, `sales_agent_profiles`, and `restaurant_members`.
+- [x] Create encrypted `payout_accounts`.
+- [x] Create `restaurants`.
+- [x] Create `menu_items`.
+- [x] Create `combos`.
+- [x] Create `combo_items` if combos are composed from menu items.
 - [x] Keep the cart client-side for MVP and validate it on the server at checkout.
-- [ ] Create `orders`.
-- [ ] Create `order_items`.
-- [ ] Create `order_item_components` for combo/custom meal selections.
-- [ ] Create `order_status_events`.
-- [ ] Create `restaurant_order_decisions` and `order_issues`.
-- [ ] Create `payments`.
-- [ ] Create `deliveries` and `delivery_status_events`.
-- [ ] Create `notifications`.
-- [ ] Create `activity_events` for the admin live-activity view.
-- [ ] Create `referrals` and `commissions`.
-- [ ] Create `restaurant_earnings`.
-- [ ] Create `payout_requests`.
-- [ ] Create `payouts` and `payout_items`.
-- [ ] Create `reviews`.
-- [ ] Add timestamps, status enums, and soft-delete/archive fields where needed.
+- [x] Create `orders`.
+- [x] Create `order_items`.
+- [x] Create `order_item_components` for combo/custom meal selections.
+- [x] Create `order_status_events`.
+- [x] Create `restaurant_order_decisions` and `order_issues`.
+- [x] Create `payments`.
+- [x] Create `deliveries` and `delivery_status_events`.
+- [x] Create `notifications`.
+- [x] Create `activity_events` for the admin live-activity view.
+- [x] Create `referrals` and `commissions`.
+- [x] Create `restaurant_earnings`.
+- [x] Create `payout_requests`.
+- [x] Create `payouts` and `payout_items`.
+- [x] Create `reviews`.
+- [x] Add timestamps, status enums, and soft-delete/archive fields where needed.
 
 ## API Surface
 
 - [x] Add and locally verify an API health endpoint.
-- [ ] Auth: signup.
+- [x] Auth: signup.
 - [ ] Auth: login.
 - [ ] Auth: logout.
 - [ ] Auth: password reset request.
@@ -138,7 +138,7 @@
 - [x] Create frontend and backend `.env.example` files with required variable names only.
 - [x] Configure local Postgres or a free managed Postgres database for development.
 - [x] Configure API `DATABASE_URL`.
-- [ ] Configure API auth/session secrets.
+- [x] Configure API auth/session secrets locally in `apps/api/.env`.
 - [ ] Configure frontend API base URL.
 - [ ] Configure production environment variables on the deployment host.
 - [ ] Run `npm run lint`.
@@ -151,3 +151,4 @@
 - [ ] Background jobs for notifications and cleanup.
 - [ ] Analytics for conversion, order volume, and delivery performance.
 - [ ] Database seed script for demo restaurants, menus, combos, and users.
+

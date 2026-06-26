@@ -2,6 +2,7 @@ const DEFAULT_SESSION_TTL_DAYS = 30
 const MIN_SESSION_SECRET_LENGTH = 32
 
 export type AuthConfig = {
+  sessionCookieName: string
   sessionSecret: string
   sessionTtlMs: number
 }
@@ -28,6 +29,7 @@ export function getAuthConfig(): AuthConfig {
   }
 
   return {
+    sessionCookieName: process.env.SESSION_COOKIE_NAME ?? 'mando_session',
     sessionSecret,
     sessionTtlMs: sessionTtlDays * 24 * 60 * 60 * 1000,
   }

@@ -1,6 +1,8 @@
 import cors from '@fastify/cors'
 import Fastify from 'fastify'
 
+import { authRoutes } from './routes/auth.js'
+
 type BuildAppOptions = {
   logger?: boolean
   webOrigin?: string
@@ -15,6 +17,8 @@ export function buildApp(options: BuildAppOptions = {}) {
     origin: options.webOrigin ?? 'http://localhost:3000',
     credentials: true,
   })
+
+  app.register(authRoutes, { prefix: '/auth' })
 
   app.get('/health', async () => {
     return {
