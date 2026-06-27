@@ -32,7 +32,7 @@ export function createCloudinaryUploadSignature(type: CloudinaryUploadType) {
   const config = getCloudinaryConfig()
   const timestamp = Math.floor(Date.now() / 1000)
   const folder = uploadFolders[type]
-  const publicId = `${folder}/${randomUUID()}`
+  const publicId = randomUUID()
 
   const paramsToSign = {
     folder,

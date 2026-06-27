@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
@@ -24,6 +24,21 @@ type SavedAddress = {
     city: string;
     state: string;
   };
+};
+
+type CloudinarySignatureResponse = {
+  upload: {
+    apiKey: string;
+    uploadUrl: string;
+    folder: string;
+    publicId: string;
+    timestamp: number;
+    signature: string;
+  };
+};
+
+type CloudinaryUploadResponse = {
+  secure_url: string;
 };
 
 const MONTH_OPTIONS = [
@@ -76,6 +91,7 @@ function formatAddress(address: SavedAddress) {
 
 export default function ProfilePage() {
   const router = useRouter();
+  const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const auth = useAuthStore((s) => s.auth);
   const authLoading = useAuthStore((s) => s.loading);
   const fetchCurrentUser = useAuthStore((s) => s.fetchCurrentUser);
@@ -95,6 +111,7 @@ export default function ProfilePage() {
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingBirthday, setSavingBirthday] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [selectedRating, setSelectedRating] = useState(0);
   const [orders] = useState([
@@ -286,6 +303,66 @@ export default function ProfilePage() {
     }
   }
 
+  async function uploadAvatar(file: File) {
+    if (!file.type.startsWith("image/")) {
+      showToast("Please choose an image file", "error");
+      return;
+    }
+
+    if (file.size > 3 * 1024 * 1024) {
+      showToast("Image must be 3MB or smaller", "error");
+      return;
+    }
+
+    setUploadingAvatar(true);
+
+    try {
+      const signatureResponse = await fetch(`${API_BASE_URL}/uploads/signature`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ type: "customer_avatar" }),
+      });
+
+      if (!signatureResponse.ok) {
+        const errorBody = (await signatureResponse.json().catch(() => null)) as { message?: string } | null;
+        throw new Error(errorBody?.message ?? "Unable to prepare image upload");
+      }
+
+      const { upload } = (await signatureResponse.json()) as CloudinarySignatureResponse;
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("api_key", upload.apiKey);
+      formData.append("timestamp", String(upload.timestamp));
+      formData.append("signature", upload.signature);
+      formData.append("folder", upload.folder);
+      formData.append("public_id", upload.publicId);
+
+      const cloudinaryResponse = await fetch(upload.uploadUrl, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!cloudinaryResponse.ok) {
+        throw new Error("Unable to upload image");
+      }
+
+      const uploadedImage = (await cloudinaryResponse.json()) as CloudinaryUploadResponse;
+      await updateCustomerProfile({ avatarUrl: uploadedImage.secure_url });
+      showToast("Profile photo updated successfully", "success");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Unable to update profile photo", "error");
+    } finally {
+      setUploadingAvatar(false);
+
+      if (avatarInputRef.current) {
+        avatarInputRef.current.value = "";
+      }
+    }
+  }
+
   async function logout() {
     setLoggingOut(true);
 
@@ -337,8 +414,36 @@ export default function ProfilePage() {
 
         <section className="mb-6 overflow-hidden rounded-[28px] border border-[#F1D86F] bg-[#FFF8DC] p-4 shadow-[0_18px_50px_rgba(20,27,52,0.08)] sm:p-6">
           <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
-            <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-white shadow-sm sm:h-24 sm:w-24">
-              <DefaultUserIcon />
+            <div className="flex shrink-0 flex-col items-start gap-3">
+              <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-full bg-white shadow-sm sm:h-24 sm:w-24">
+                {auth.profile?.avatarUrl ? (
+                  <img
+                    src={auth.profile.avatarUrl}
+                    alt="Profile photo"
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <DefaultUserIcon />
+                )}
+              </div>
+              <input
+                ref={avatarInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) void uploadAvatar(file);
+                }}
+              />
+              <button
+                type="button"
+                disabled={uploadingAvatar}
+                onClick={() => avatarInputRef.current?.click()}
+                className="rounded-xl border border-[#141B34] px-3 py-2 text-xs font-semibold text-[#141B34] disabled:opacity-60"
+              >
+                {uploadingAvatar ? "Uploading..." : "Change photo"}
+              </button>
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
