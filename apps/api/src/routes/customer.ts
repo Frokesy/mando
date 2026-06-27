@@ -11,7 +11,12 @@ const updateProfileBodySchema = z
   .object({
     fullName: z.string().trim().min(1).max(120).optional(),
     phone: z.string().trim().min(1).max(40).nullable().optional(),
-    birthday: z.string().date().nullable().optional(),
+    birthday: z
+      .string()
+      .regex(/^(?:\d{4}-)?\d{2}-\d{2}$/, 'Birthday must include a valid month and day.')
+      .refine(isValidBirthdayInput, 'Birthday must be a real month and day.')
+      .nullable()
+      .optional(),
     avatarUrl: z.url().nullable().optional(),
   })
   .refine((value) => Object.keys(value).length > 0, {
@@ -61,7 +66,10 @@ export async function customerRoutes(app: FastifyInstance) {
     }
 
     if (updates.birthday !== undefined) {
-      values.birthday = updates.birthday
+      values.birthday =
+        updates.birthday && updates.birthday.length === 5
+          ? `2000-${updates.birthday}`
+          : updates.birthday
     }
 
     if (updates.avatarUrl !== undefined) {
@@ -95,4 +103,21 @@ function sendUnauthenticated(reply: FastifyReply) {
       error: 'unauthenticated',
       message: 'Please log in to continue.',
     })
+}
+
+function isValidBirthdayInput(value: string) {
+  const normalizedValue = value.length === 5 ? `2000-${value}` : value
+  const match = normalizedValue.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+
+  if (!match) return false
+
+  const month = Number(match[2])
+  const day = Number(match[3])
+  const parsedDate = new Date(Date.UTC(2000, month - 1, day))
+
+  return (
+    parsedDate.getUTCFullYear() === 2000 &&
+    parsedDate.getUTCMonth() === month - 1 &&
+    parsedDate.getUTCDate() === day
+  )
 }

@@ -6,23 +6,70 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { ArrowLeftIcon, DefaultUserIcon, GreyedStarIcon, StarIcon } from "@/components/svgs/DefaultIcons";
 import useAuthStore from "@/store/authStore";
-import useCartStore from "@/store/cartStore";
 import { useToastStore } from "@/store/toastStore";
 import BottomNav from "@/components/BottomNav";
 
+const MONTH_OPTIONS = [
+  { value: "01", label: "January" },
+  { value: "02", label: "February" },
+  { value: "03", label: "March" },
+  { value: "04", label: "April" },
+  { value: "05", label: "May" },
+  { value: "06", label: "June" },
+  { value: "07", label: "July" },
+  { value: "08", label: "August" },
+  { value: "09", label: "September" },
+  { value: "10", label: "October" },
+  { value: "11", label: "November" },
+  { value: "12", label: "December" },
+];
+
+const DAY_OPTIONS = Array.from({ length: 31 }, (_, index) => {
+  const day = String(index + 1).padStart(2, "0");
+  return { value: day, label: String(index + 1) };
+});
+
+function getBirthdayParts(value: string | null | undefined) {
+  if (!value) return { month: "", day: "" };
+
+  const match = value.match(/^(?:\d{4}-)?(\d{2})-(\d{2})$/);
+  return {
+    month: match?.[1] ?? "",
+    day: match?.[2] ?? "",
+  };
+}
+
+function getBirthdayValue(month: string, day: string) {
+  if (!month || !day) return null;
+  return `${month}-${day}`;
+}
+
+function formatBirthdayLabel(value: string | null | undefined) {
+  const { month, day } = getBirthdayParts(value);
+  const monthLabel = MONTH_OPTIONS.find((option) => option.value === month)?.label;
+
+  if (!monthLabel || !day) return "No birthday saved yet.";
+
+  return `${monthLabel} ${Number(day)}`;
+}
+
 export default function ProfilePage() {
   const router = useRouter();
-  const cartCount = useCartStore((s) => s.items.length);
   const auth = useAuthStore((s) => s.auth);
   const authLoading = useAuthStore((s) => s.loading);
   const fetchCurrentUser = useAuthStore((s) => s.fetchCurrentUser);
+  const updateCustomerProfile = useAuthStore((s) => s.updateCustomerProfile);
   const logoutAuth = useAuthStore((s) => s.logout);
 
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [birthday, setBirthday] = useState("");
+  const [birthdayMonth, setBirthdayMonth] = useState("");
+  const [birthdayDay, setBirthdayDay] = useState("");
+  const [editingBirthday, setEditingBirthday] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [savingBirthday, setSavingBirthday] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [selectedRating, setSelectedRating] = useState(0);
   const [orders] = useState([
@@ -36,8 +83,6 @@ export default function ProfilePage() {
 
   useEffect(() => {
     let mounted = true;
-
-    setCheckingAuth(true);
 
     fetchCurrentUser()
       .then((currentAuth) => {
@@ -65,22 +110,95 @@ export default function ProfilePage() {
     };
   }, [fetchCurrentUser, router, showToast]);
 
-  useEffect(() => {
+  async function saveProfile() {
+    const trimmedName = name.trim();
+
+    if (!trimmedName) {
+      showToast("Please enter your full name", "error");
+      return;
+    }
+
+    setSavingProfile(true);
+
+    try {
+      await updateCustomerProfile({
+        fullName: trimmedName,
+        birthday: getBirthdayValue(birthdayMonth, birthdayDay),
+      });
+
+      setName(trimmedName);
+      setEditing(false);
+      showToast("Profile updated successfully", "success");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Unable to update profile", "error");
+    } finally {
+      setSavingProfile(false);
+    }
+  }
+
+  async function saveBirthday() {
+    const birthdayValue = getBirthdayValue(birthdayMonth, birthdayDay);
+
+    if (!birthdayValue) {
+      showToast("Please choose your birthday month and day", "error");
+      return;
+    }
+
+    setSavingBirthday(true);
+
+    try {
+      await updateCustomerProfile({
+        birthday: birthdayValue,
+      });
+
+      setEditingBirthday(false);
+      showToast("Birthday saved successfully", "success");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Unable to save birthday", "error");
+    } finally {
+      setSavingBirthday(false);
+    }
+  }
+
+  function discardProfileEdits() {
     if (!auth) return;
+
+    const birthdayParts = getBirthdayParts(auth.profile?.birthday);
 
     setName(auth.profile?.fullName ?? "");
     setEmail(auth.user.email);
-  }, [auth]);
-
-  function saveProfile() {
+    setBirthdayMonth(birthdayParts.month);
+    setBirthdayDay(birthdayParts.day);
     setEditing(false);
-    // persist if needed
   }
 
-  function formatBirthdayLabel(date: string) {
-    if (!date) return "No birthday saved yet.";
-    const parsed = new Date(date);
-    return parsed.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  function openProfileEditor() {
+    if (!auth) return;
+
+    const birthdayParts = getBirthdayParts(auth.profile?.birthday);
+
+    setName(auth.profile?.fullName ?? "");
+    setEmail(auth.user.email);
+    setBirthdayMonth(birthdayParts.month);
+    setBirthdayDay(birthdayParts.day);
+    setEditing(true);
+  }
+
+  function toggleProfileEditor() {
+    if (editing) {
+      setEditing(false);
+      return;
+    }
+
+    openProfileEditor();
+  }
+
+  function openBirthdayEditor() {
+    const birthdayParts = getBirthdayParts(auth?.profile?.birthday);
+
+    setBirthdayMonth(birthdayParts.month);
+    setBirthdayDay(birthdayParts.day);
+    setEditingBirthday(true);
   }
 
   async function logout() {
@@ -112,6 +230,9 @@ export default function ProfilePage() {
     );
   }
 
+  const displayName = editing ? name : auth.profile?.fullName ?? "";
+  const displayEmail = editing ? email : auth.user.email;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
@@ -128,26 +249,29 @@ export default function ProfilePage() {
           </Link>
         </header>
 
-        <section className="rounded-[32px] bg-gradient-to-r from-[#FFF7E0] via-[#FFF3CC] to-[#FFF7E0] p-6 shadow-[0_20px_60px_rgba(223,180,0,0.12)] border border-[#F1D86F] mb-6 overflow-hidden">
-          <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
-            <div className="flex items-center justify-center w-24 h-24 rounded-full bg-white shadow-sm">
+        <section className="mb-6 overflow-hidden rounded-[28px] border border-[#F1D86F] bg-[#FFF8DC] p-4 shadow-[0_18px_50px_rgba(20,27,52,0.08)] sm:p-6">
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
+            <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-white shadow-sm sm:h-24 sm:w-24">
               <DefaultUserIcon />
             </div>
-            <div className="flex-1">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-2xl font-semibold text-[#141B34]">{name || (authLoading ? "Loading..." : "Customer")}</h2>
-                  <p className="mt-1 text-sm text-[#6B6B6B]">{email || "No email loaded"}</p>
-                  {birthday ? (
-                    <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-white/90 px-3 py-2 text-sm font-medium text-[#141B34] shadow-sm">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-[#8A6A00]">Customer profile</p>
+                  <h2 className="mt-1 break-words text-2xl font-semibold leading-tight text-[#141B34] sm:text-3xl">
+                    {displayName || (authLoading ? "Loading..." : "Customer")}
+                  </h2>
+                  <p className="mt-2 break-all text-sm text-[#6B6B6B]">{displayEmail}</p>
+                  {auth.profile?.birthday ? (
+                    <div className="mt-4 inline-flex max-w-full items-center gap-2 rounded-full bg-white px-3 py-2 text-sm font-semibold text-[#141B34] shadow-sm">
                       <span className="inline-flex h-2.5 w-2.5 rounded-full bg-[#DFB400]" />
-                      <span>Birthday saved: {formatBirthdayLabel(birthday)}</span>
+                      <span className="truncate">Birthday: {formatBirthdayLabel(auth.profile.birthday)}</span>
                     </div>
                   ) : null}
                 </div>
                 <button
-                  onClick={() => setEditing(!editing)}
-                  className="rounded-2xl bg-[#141B34] px-4 py-3 text-sm font-semibold text-white shadow-sm"
+                  onClick={toggleProfileEditor}
+                  className="w-full rounded-2xl bg-[#141B34] px-4 py-3 text-sm font-semibold text-white shadow-sm sm:w-auto"
                 >
                   {editing ? "Close" : "Edit profile"}
                 </button>
@@ -158,12 +282,14 @@ export default function ProfilePage() {
           {editing && (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mt-6 rounded-[24px] bg-white p-5 shadow-sm border border-gray-200">
               <div className="grid gap-3 sm:grid-cols-2">
-                <input value={name} onChange={(e) => setName(e.target.value)} className="w-full rounded-2xl border border-gray-200 p-4" />
-                <input value={email} onChange={(e) => setEmail(e.target.value)} className="w-full rounded-2xl border border-gray-200 p-4" />
+                <input value={name} onChange={(e) => setName(e.target.value)} className="w-full rounded-2xl border border-gray-200 p-4" placeholder="Full name" />
+                <input value={email} readOnly className="w-full rounded-2xl border border-gray-200 bg-gray-50 p-4 text-[#6B6B6B]" aria-label="Email address" />
               </div>
               <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-                <button onClick={saveProfile} className="flex-1 rounded-2xl bg-[#141B34] py-3 text-sm font-semibold text-white">Save profile</button>
-                <button onClick={() => setEditing(false)} className="flex-1 rounded-2xl border border-gray-300 py-3 text-sm font-semibold text-[#141B34]">Discard</button>
+                <button disabled={savingProfile} onClick={saveProfile} className="flex-1 rounded-2xl bg-[#141B34] py-3 text-sm font-semibold text-white disabled:opacity-60">
+                  {savingProfile ? "Saving..." : "Save profile"}
+                </button>
+                <button disabled={savingProfile} onClick={discardProfileEdits} className="flex-1 rounded-2xl border border-gray-300 py-3 text-sm font-semibold text-[#141B34] disabled:opacity-60">Discard</button>
               </div>
             </motion.div>
           )}
@@ -178,20 +304,54 @@ export default function ProfilePage() {
             <div className="rounded-full bg-[#FFF7E0] px-3 py-1 text-xs font-semibold text-[#141B34]">Premium</div>
           </div>
           <div className="rounded-[28px] bg-white p-5 shadow-sm border border-gray-200">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-              <input
-                type="date"
-                value={birthday}
-                onChange={(e) => setBirthday(e.target.value)}
-                className="flex-1 rounded-2xl border border-gray-200 bg-[#F9F9F9] px-4 py-3"
-              />
-              <button
-                className="rounded-2xl bg-[#141B34] px-6 py-3 text-sm font-semibold text-white"
-                onClick={() => showToast("Birthday saved successfully", "success")}
-              >
-                Save birthday
-              </button>
-            </div>
+            {auth.profile?.birthday && !editingBirthday ? (
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-[#141B34]">{formatBirthdayLabel(auth.profile.birthday)}</p>
+                  <p className="mt-1 text-sm text-[#6B6B6B]">We will use this for birthday perks only.</p>
+                </div>
+                <button
+                  className="rounded-2xl border border-gray-300 px-5 py-3 text-sm font-semibold text-[#141B34]"
+                  onClick={openBirthdayEditor}
+                >
+                  Change birthday
+                </button>
+              </div>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-[1fr_120px_auto] sm:items-center">
+                <select
+                  value={birthdayMonth}
+                  onChange={(event) => setBirthdayMonth(event.target.value)}
+                  className="w-full rounded-2xl border border-gray-200 bg-[#F9F9F9] px-4 py-3 text-[#141B34]"
+                >
+                  <option value="">Month</option>
+                  {MONTH_OPTIONS.map((month) => (
+                    <option key={month.value} value={month.value}>
+                      {month.label}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={birthdayDay}
+                  onChange={(event) => setBirthdayDay(event.target.value)}
+                  className="w-full rounded-2xl border border-gray-200 bg-[#F9F9F9] px-4 py-3 text-[#141B34]"
+                >
+                  <option value="">Day</option>
+                  {DAY_OPTIONS.map((day) => (
+                    <option key={day.value} value={day.value}>
+                      {day.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  disabled={savingBirthday}
+                  className="rounded-2xl bg-[#141B34] px-6 py-3 text-sm font-semibold text-white disabled:opacity-60"
+                  onClick={saveBirthday}
+                >
+                  {savingBirthday ? "Saving..." : "Save birthday"}
+                </button>
+              </div>
+            )}
           </div>
         </section>
 

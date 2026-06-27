@@ -13,6 +13,7 @@ type AuthUser = {
 type AuthProfile = {
   fullName: string;
   phone: string | null;
+  birthday: string | null;
   avatarUrl: string | null;
 } | null;
 
@@ -27,7 +28,15 @@ type AuthState = {
   loading: boolean;
   setAuth: (auth: AuthPayload | null) => void;
   fetchCurrentUser: () => Promise<AuthPayload | null>;
+  updateCustomerProfile: (profile: CustomerProfileUpdate) => Promise<AuthPayload>;
   logout: () => Promise<void>;
+};
+
+type CustomerProfileUpdate = {
+  fullName?: string;
+  phone?: string | null;
+  birthday?: string | null;
+  avatarUrl?: string | null;
 };
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -53,6 +62,27 @@ export const useAuthStore = create<AuthState>((set) => ({
     } finally {
       set({ loading: false });
     }
+  },
+  updateCustomerProfile: async (profile) => {
+    const response = await fetch(`${API_BASE_URL}/customer/profile`, {
+      method: "PATCH",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(profile),
+    });
+
+    if (!response.ok) {
+      const errorBody = (await response.json().catch(() => null)) as
+        | { message?: string }
+        | null;
+      throw new Error(errorBody?.message ?? "Unable to update profile");
+    }
+
+    const auth = (await response.json()) as AuthPayload;
+    set({ auth });
+    return auth;
   },
   logout: async () => {
     try {

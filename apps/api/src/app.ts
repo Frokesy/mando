@@ -9,13 +9,30 @@ type BuildAppOptions = {
   webOrigin?: string
 }
 
+const defaultAllowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:3001',
+]
+
 export function buildApp(options: BuildAppOptions = {}) {
   const app = Fastify({
     logger: options.logger ?? true,
   })
 
+  const allowedOrigins = getAllowedOrigins(options.webOrigin)
+
   app.register(cors, {
-    origin: options.webOrigin ?? 'http://localhost:3000',
+    origin: (origin, callback) => {
+      if (!origin || isAllowedOrigin(origin, allowedOrigins)) {
+        callback(null, true)
+        return
+      }
+
+      callback(new Error(`Origin ${origin} is not allowed by CORS.`), false)
+    },
+    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
     credentials: true,
   })
 
@@ -38,4 +55,29 @@ export function buildApp(options: BuildAppOptions = {}) {
   })
 
   return app
+}
+
+function getAllowedOrigins(webOrigin: string | undefined) {
+  if (!webOrigin) return defaultAllowedOrigins
+
+  const configuredOrigins = webOrigin
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+
+  return Array.from(new Set([...configuredOrigins, ...defaultAllowedOrigins]))
+}
+
+function isAllowedOrigin(origin: string, allowedOrigins: string[]) {
+  if (allowedOrigins.includes(origin)) return true
+
+  if (process.env.NODE_ENV === 'production') return false
+
+  try {
+    const url = new URL(origin)
+
+    return url.hostname === 'localhost' || url.hostname === '127.0.0.1'
+  } catch {
+    return false
+  }
 }
