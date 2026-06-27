@@ -2,6 +2,7 @@ import cors from '@fastify/cors'
 import Fastify from 'fastify'
 
 import { authRoutes } from './routes/auth.js'
+import { customerRoutes } from './routes/customer.js'
 
 type BuildAppOptions = {
   logger?: boolean
@@ -19,6 +20,7 @@ export function buildApp(options: BuildAppOptions = {}) {
   })
 
   app.register(authRoutes, { prefix: '/auth' })
+  app.register(customerRoutes, { prefix: '/customer' })
 
   app.get('/health', async () => {
     return {

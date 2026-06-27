@@ -75,7 +75,7 @@
 - [x] Auth: logout.
 - [ ] Auth: password reset request.
 - [ ] Auth: OTP/verification handling.
-- [ ] Customer: profile read/update.
+- [x] Customer: profile read/update.
 - [ ] Customer: addresses read/create/update/delete.
 - [ ] Catalog: restaurants list/detail.
 - [ ] Catalog: featured combos list/detail.
