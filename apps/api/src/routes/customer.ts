@@ -13,6 +13,7 @@ import {
   menuItems,
   orderItemComponents,
   orderItems,
+  orderIssues,
   orders,
   orderStatusEvents,
   payments,
@@ -83,7 +84,20 @@ const createOrderBodySchema = z.object({
     .max(25),
 })
 
+const orderParamsSchema = z.object({
+  orderId: z.uuid(),
+})
+
+const reportOrderBodySchema = z.object({
+  reason: z.string().trim().min(5).max(600),
+})
+
 const MAX_CUSTOMER_ADDRESSES = 3
+const CUSTOMER_CANCELLABLE_ORDER_STATUSES = [
+  'pending_payment',
+  'paid',
+  'awaiting_restaurant',
+] as const
 
 type ProfileUpdateValues = {
   fullName?: string
@@ -670,6 +684,169 @@ export async function customerRoutes(app: FastifyInstance) {
       order: createdOrder,
     })
   })
+
+  app.get('/orders', async (request, reply) => {
+    const sessionContext = await getCurrentSessionContext(request.headers.cookie)
+
+    if (!sessionContext) {
+      return sendUnauthenticated(reply)
+    }
+
+    const orderRows = await selectCustomerOrderSummaries(sessionContext.userId)
+
+    return reply.status(200).send({
+      orders: orderRows.map(serializeOrderSummary),
+    })
+  })
+
+  app.get('/orders/:orderId', async (request, reply) => {
+    const sessionContext = await getCurrentSessionContext(request.headers.cookie)
+
+    if (!sessionContext) {
+      return sendUnauthenticated(reply)
+    }
+
+    const parsedParams = orderParamsSchema.safeParse(request.params)
+
+    if (!parsedParams.success) {
+      return sendValidationError(reply, 'Please choose a valid order.', parsedParams.error.issues)
+    }
+
+    const order = await getCustomerOrder(sessionContext.userId, parsedParams.data.orderId)
+
+    if (!order) {
+      return sendOrderNotFound(reply)
+    }
+
+    const [items, components, timeline, issues, paymentRows] = await Promise.all([
+      selectOrderItems(order.id),
+      selectOrderItemComponents(order.id),
+      selectOrderTimeline(order.id),
+      selectOrderIssues(order.id),
+      selectOrderPayments(order.id),
+    ])
+
+    return reply.status(200).send({
+      order: serializeOrderDetail(order, items, components, timeline, issues, paymentRows),
+    })
+  })
+
+  app.post('/orders/:orderId/cancel', async (request, reply) => {
+    const sessionContext = await getCurrentSessionContext(request.headers.cookie)
+
+    if (!sessionContext) {
+      return sendUnauthenticated(reply)
+    }
+
+    const parsedParams = orderParamsSchema.safeParse(request.params)
+
+    if (!parsedParams.success) {
+      return sendValidationError(reply, 'Please choose a valid order.', parsedParams.error.issues)
+    }
+
+    const order = await getCustomerOrder(sessionContext.userId, parsedParams.data.orderId)
+
+    if (!order) {
+      return sendOrderNotFound(reply)
+    }
+
+    if (!isCustomerCancellableOrderStatus(order.status)) {
+      return reply.status(409).send({
+        error: 'order_not_cancellable',
+        message: 'This order can no longer be cancelled. Please report an issue instead.',
+      })
+    }
+
+    const cancelledOrder = await database.transaction(async (tx) => {
+      const [updatedOrder] = await tx
+        .update(orders)
+        .set({ status: 'cancelled', updatedAt: new Date() })
+        .where(
+          and(
+            eq(orders.id, order.id),
+            eq(orders.customerId, sessionContext.userId),
+          ),
+        )
+        .returning({
+          id: orders.id,
+          orderNumber: orders.orderNumber,
+          status: orders.status,
+          totalAmount: orders.totalAmount,
+          currency: orders.currency,
+          createdAt: orders.createdAt,
+          placedAt: orders.placedAt,
+        })
+
+      await tx
+        .update(payments)
+        .set({ status: 'cancelled', updatedAt: new Date() })
+        .where(eq(payments.orderId, order.id))
+
+      await tx
+        .update(deliveries)
+        .set({ status: 'cancelled', updatedAt: new Date() })
+        .where(eq(deliveries.orderId, order.id))
+
+      await tx.insert(orderStatusEvents).values({
+        orderId: order.id,
+        status: 'cancelled',
+        actorUserId: sessionContext.userId,
+        note: 'Order cancelled by customer.',
+      })
+
+      return updatedOrder
+    })
+
+    return reply.status(200).send({
+      order: cancelledOrder,
+    })
+  })
+
+  app.post('/orders/:orderId/report', async (request, reply) => {
+    const sessionContext = await getCurrentSessionContext(request.headers.cookie)
+
+    if (!sessionContext) {
+      return sendUnauthenticated(reply)
+    }
+
+    const parsedParams = orderParamsSchema.safeParse(request.params)
+
+    if (!parsedParams.success) {
+      return sendValidationError(reply, 'Please choose a valid order.', parsedParams.error.issues)
+    }
+
+    const parsedBody = reportOrderBodySchema.safeParse(request.body)
+
+    if (!parsedBody.success) {
+      return sendValidationError(reply, 'Please describe the issue.', parsedBody.error.issues)
+    }
+
+    const order = await getCustomerOrder(sessionContext.userId, parsedParams.data.orderId)
+
+    if (!order) {
+      return sendOrderNotFound(reply)
+    }
+
+    const [issue] = await database
+      .insert(orderIssues)
+      .values({
+        orderId: order.id,
+        type: 'customer_complaint',
+        raisedByUserId: sessionContext.userId,
+        reason: parsedBody.data.reason,
+      })
+      .returning({
+        id: orderIssues.id,
+        type: orderIssues.type,
+        status: orderIssues.status,
+        reason: orderIssues.reason,
+        createdAt: orderIssues.createdAt,
+      })
+
+    return reply.status(201).send({
+      issue,
+    })
+  })
 }
 
 const addressReturnColumns = {
@@ -833,6 +1010,238 @@ function generateOrderNumber() {
   return `MND-${datePart}-${randomPart}`
 }
 
+function selectCustomerOrderSummaries(userId: string) {
+  return database
+    .select({
+      id: orders.id,
+      orderNumber: orders.orderNumber,
+      status: orders.status,
+      totalAmount: orders.totalAmount,
+      currency: orders.currency,
+      placedAt: orders.placedAt,
+      createdAt: orders.createdAt,
+      restaurant: {
+        id: restaurants.id,
+        name: restaurants.name,
+        slug: restaurants.slug,
+        imageUrl: restaurants.imageUrl,
+      },
+    })
+    .from(orders)
+    .innerJoin(restaurants, eq(orders.restaurantId, restaurants.id))
+    .where(eq(orders.customerId, userId))
+    .orderBy(desc(orders.createdAt))
+}
+
+type CustomerOrderSummary = Awaited<
+  ReturnType<typeof selectCustomerOrderSummaries>
+>[number]
+
+function serializeOrderSummary(order: CustomerOrderSummary) {
+  return {
+    id: order.id,
+    orderNumber: order.orderNumber,
+    status: order.status,
+    totalAmount: order.totalAmount,
+    currency: order.currency,
+    placedAt: order.placedAt ?? order.createdAt,
+    restaurant: order.restaurant,
+    canCancel: isCustomerCancellableOrderStatus(order.status),
+  }
+}
+
+async function getCustomerOrder(userId: string, orderId: string) {
+  const [order] = await database
+    .select({
+      id: orders.id,
+      orderNumber: orders.orderNumber,
+      customerId: orders.customerId,
+      restaurantId: orders.restaurantId,
+      status: orders.status,
+      currency: orders.currency,
+      subtotalAmount: orders.subtotalAmount,
+      deliveryFeeAmount: orders.deliveryFeeAmount,
+      discountAmount: orders.discountAmount,
+      totalAmount: orders.totalAmount,
+      customerNote: orders.customerNote,
+      deliveryRecipientName: orders.deliveryRecipientName,
+      deliveryPhone: orders.deliveryPhone,
+      deliveryStreetAddress: orders.deliveryStreetAddress,
+      deliveryServiceArea: orders.deliveryServiceArea,
+      deliveryLandmark: orders.deliveryLandmark,
+      placedAt: orders.placedAt,
+      createdAt: orders.createdAt,
+      restaurant: {
+        id: restaurants.id,
+        name: restaurants.name,
+        slug: restaurants.slug,
+        imageUrl: restaurants.imageUrl,
+        phone: restaurants.phone,
+      },
+    })
+    .from(orders)
+    .innerJoin(restaurants, eq(orders.restaurantId, restaurants.id))
+    .where(and(eq(orders.id, orderId), eq(orders.customerId, userId)))
+    .limit(1)
+
+  return order
+}
+
+type CustomerOrder = NonNullable<Awaited<ReturnType<typeof getCustomerOrder>>>
+
+function selectOrderItems(orderId: string) {
+  return database
+    .select({
+      id: orderItems.id,
+      comboId: orderItems.comboId,
+      menuItemId: orderItems.menuItemId,
+      itemName: orderItems.itemName,
+      unitPriceAmount: orderItems.unitPriceAmount,
+      quantity: orderItems.quantity,
+      lineTotalAmount: orderItems.lineTotalAmount,
+      createdAt: orderItems.createdAt,
+    })
+    .from(orderItems)
+    .where(eq(orderItems.orderId, orderId))
+    .orderBy(asc(orderItems.createdAt))
+}
+
+type CustomerOrderItem = Awaited<ReturnType<typeof selectOrderItems>>[number]
+
+function selectOrderItemComponents(orderId: string) {
+  return database
+    .select({
+      id: orderItemComponents.id,
+      orderItemId: orderItemComponents.orderItemId,
+      menuItemId: orderItemComponents.menuItemId,
+      itemName: orderItemComponents.itemName,
+      unitPriceAmount: orderItemComponents.unitPriceAmount,
+      quantity: orderItemComponents.quantity,
+      lineTotalAmount: orderItemComponents.lineTotalAmount,
+    })
+    .from(orderItemComponents)
+    .innerJoin(orderItems, eq(orderItemComponents.orderItemId, orderItems.id))
+    .where(eq(orderItems.orderId, orderId))
+}
+
+type CustomerOrderItemComponent = Awaited<
+  ReturnType<typeof selectOrderItemComponents>
+>[number]
+
+function selectOrderTimeline(orderId: string) {
+  return database
+    .select({
+      id: orderStatusEvents.id,
+      status: orderStatusEvents.status,
+      note: orderStatusEvents.note,
+      createdAt: orderStatusEvents.createdAt,
+    })
+    .from(orderStatusEvents)
+    .where(eq(orderStatusEvents.orderId, orderId))
+    .orderBy(asc(orderStatusEvents.createdAt))
+}
+
+type CustomerOrderTimelineEvent = Awaited<
+  ReturnType<typeof selectOrderTimeline>
+>[number]
+
+function selectOrderIssues(orderId: string) {
+  return database
+    .select({
+      id: orderIssues.id,
+      type: orderIssues.type,
+      status: orderIssues.status,
+      reason: orderIssues.reason,
+      resolution: orderIssues.resolution,
+      createdAt: orderIssues.createdAt,
+    })
+    .from(orderIssues)
+    .where(eq(orderIssues.orderId, orderId))
+    .orderBy(desc(orderIssues.createdAt))
+}
+
+type CustomerOrderIssue = Awaited<ReturnType<typeof selectOrderIssues>>[number]
+
+function selectOrderPayments(orderId: string) {
+  return database
+    .select({
+      id: payments.id,
+      method: payments.method,
+      provider: payments.provider,
+      amount: payments.amount,
+      currency: payments.currency,
+      status: payments.status,
+      createdAt: payments.createdAt,
+      paidAt: payments.paidAt,
+      verifiedAt: payments.verifiedAt,
+    })
+    .from(payments)
+    .where(eq(payments.orderId, orderId))
+    .orderBy(desc(payments.createdAt))
+}
+
+type CustomerOrderPayment = Awaited<ReturnType<typeof selectOrderPayments>>[number]
+
+function serializeOrderDetail(
+  order: CustomerOrder,
+  items: CustomerOrderItem[],
+  components: CustomerOrderItemComponent[],
+  timeline: CustomerOrderTimelineEvent[],
+  issues: CustomerOrderIssue[],
+  paymentRows: CustomerOrderPayment[],
+) {
+  const componentsByOrderItemId = new Map<string, CustomerOrderItemComponent[]>()
+
+  for (const component of components) {
+    const existingComponents = componentsByOrderItemId.get(component.orderItemId)
+      ?? []
+
+    existingComponents.push(component)
+    componentsByOrderItemId.set(component.orderItemId, existingComponents)
+  }
+
+  return {
+    id: order.id,
+    orderNumber: order.orderNumber,
+    status: order.status,
+    currency: order.currency,
+    subtotalAmount: order.subtotalAmount,
+    deliveryFeeAmount: order.deliveryFeeAmount,
+    discountAmount: order.discountAmount,
+    totalAmount: order.totalAmount,
+    customerNote: order.customerNote,
+    placedAt: order.placedAt ?? order.createdAt,
+    canCancel: isCustomerCancellableOrderStatus(order.status),
+    restaurant: order.restaurant,
+    delivery: {
+      recipientName: order.deliveryRecipientName,
+      phone: order.deliveryPhone,
+      streetAddress: order.deliveryStreetAddress,
+      serviceArea: order.deliveryServiceArea,
+      landmark: order.deliveryLandmark,
+    },
+    items: items.map((item) => ({
+      id: item.id,
+      comboId: item.comboId,
+      menuItemId: item.menuItemId,
+      name: item.itemName,
+      unitPriceAmount: item.unitPriceAmount,
+      quantity: item.quantity,
+      lineTotalAmount: item.lineTotalAmount,
+      components: componentsByOrderItemId.get(item.id) ?? [],
+    })),
+    timeline,
+    issues,
+    payments: paymentRows,
+  }
+}
+
+function isCustomerCancellableOrderStatus(status: string) {
+  return CUSTOMER_CANCELLABLE_ORDER_STATUSES.includes(
+    status as (typeof CUSTOMER_CANCELLABLE_ORDER_STATUSES)[number],
+  )
+}
+
 async function getUserAddress(userId: string, addressId: string) {
   const [address] = await database
     .select({
@@ -890,6 +1299,13 @@ function sendAddressNotFound(reply: FastifyReply) {
   return reply.status(404).send({
     error: 'address_not_found',
     message: 'Address not found.',
+  })
+}
+
+function sendOrderNotFound(reply: FastifyReply) {
+  return reply.status(404).send({
+    error: 'order_not_found',
+    message: 'Order not found.',
   })
 }
 

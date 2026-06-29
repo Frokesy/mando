@@ -41,6 +41,22 @@ type CloudinaryUploadResponse = {
   secure_url: string;
 };
 
+type CustomerOrderSummary = {
+  id: string;
+  orderNumber: string;
+  status: string;
+  totalAmount: number;
+  currency: string;
+  placedAt: string;
+  canCancel: boolean;
+  restaurant: {
+    id: string;
+    name: string;
+    slug: string;
+    imageUrl: string | null;
+  };
+};
+
 const MONTH_OPTIONS = [
   { value: "01", label: "January" },
   { value: "02", label: "February" },
@@ -89,6 +105,35 @@ function formatAddress(address: SavedAddress) {
   return `${address.streetAddress}, ${address.serviceArea.name}`;
 }
 
+function formatNaira(amount: number) {
+  return `₦${amount.toLocaleString()}`;
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("en-NG", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(value));
+}
+
+function getOrderStatusLabel(status: string) {
+  return status
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function getOrderStepIndex(status: string) {
+  if (status === "cancelled" || status === "refunded") return -1;
+  if (status === "pending_payment" || status === "paid") return 0;
+  if (status === "awaiting_restaurant" || status === "restaurant_accepted") return 1;
+  if (status === "preparing" || status === "ready_for_pickup") return 2;
+  if (status === "on_the_way") return 3;
+  if (status === "delivered") return 4;
+  return 0;
+}
+
 export default function ProfilePage() {
   const router = useRouter();
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
@@ -114,10 +159,8 @@ export default function ProfilePage() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [selectedRating, setSelectedRating] = useState(0);
-  const [orders] = useState([
-    { id: "A1B2C3", title: "Amala + Ewedu", date: "2026-06-21", total: "₦2,800", rating: 4, status: "Delivered" },
-    { id: "D4E5F6", title: "Jollof + Chicken", date: "2026-05-10", total: "₦3,200", rating: 0, status: "On the way" },
-  ]);
+  const [orders, setOrders] = useState<CustomerOrderSummary[]>([]);
+  const [loadingOrders, setLoadingOrders] = useState(true);
 
   const [feedback, setFeedback] = useState("");
   const [selectedOrder, setSelectedOrder] = useState<string | null>(null);
@@ -179,6 +222,40 @@ export default function ProfilePage() {
         if (!mounted) return;
 
         setLoadingAddresses(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [auth, showToast]);
+
+  useEffect(() => {
+    if (!auth) return;
+
+    let mounted = true;
+
+    fetch(`${API_BASE_URL}/customer/orders`, {
+      credentials: "include",
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Unable to load your orders");
+
+        return response.json() as Promise<{ orders: CustomerOrderSummary[] }>;
+      })
+      .then((data) => {
+        if (!mounted) return;
+
+        setOrders(data.orders);
+      })
+      .catch((error) => {
+        if (!mounted) return;
+
+        showToast(error instanceof Error ? error.message : "Unable to load your orders", "error");
+      })
+      .finally(() => {
+        if (!mounted) return;
+
+        setLoadingOrders(false);
       });
 
     return () => {
@@ -558,38 +635,55 @@ export default function ProfilePage() {
             </div>
           </div>
           <div className="space-y-3">
-            {orders.map((o) => (
+            {loadingOrders ? (
+              <div className="rounded-[24px] bg-white p-4 shadow-sm border border-gray-200">
+                <p className="text-sm text-[#6B6B6B]">Loading your orders...</p>
+              </div>
+            ) : null}
+
+            {!loadingOrders && orders.length === 0 ? (
+              <div className="rounded-[24px] bg-white p-4 shadow-sm border border-gray-200">
+                <p className="text-sm text-[#6B6B6B]">No orders yet.</p>
+              </div>
+            ) : null}
+
+            {orders.map((order) => {
+              const statusIndex = getOrderStepIndex(order.status);
+
+              return (
               <motion.div
-                key={o.id}
+                key={order.id}
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 className="rounded-[24px] bg-white p-4 shadow-sm border border-gray-200"
               >
                 <div className="flex items-center justify-between gap-4">
                   <div>
-                    <p className="text-sm text-[#6B6B6B]">{o.date}</p>
-                    <p className="text-lg font-semibold text-[#141B34]">{o.title}</p>
+                    <p className="text-sm text-[#6B6B6B]">{formatDate(order.placedAt)}</p>
+                    <p className="text-lg font-semibold text-[#141B34]">{order.restaurant.name}</p>
                   </div>
                   <div className="text-right">
                     <p className="text-xs text-[#A4A4A4]">Order ID</p>
-                    <p className="text-sm font-semibold">{o.id}</p>
+                    <p className="text-sm font-semibold">{order.orderNumber}</p>
                   </div>
                 </div>
                 <div className="mt-4 grid gap-4">
                   <div className="flex items-center justify-between gap-4 text-sm text-[#6B6B6B]">
-                    <p>{o.total}</p>
-                    <span className="rounded-full bg-[#FFF7E0] px-3 py-1 text-xs font-semibold text-[#141B34]">{o.rating ? `${o.rating}★` : "No rating"}</span>
+                    <p>{formatNaira(order.totalAmount)}</p>
+                    <span className="rounded-full bg-[#FFF7E0] px-3 py-1 text-xs font-semibold text-[#141B34]">
+                      {getOrderStatusLabel(order.status)}
+                    </span>
                   </div>
                   <div className="rounded-3xl bg-[#F9F9F9] p-4">
                     <p className="text-sm text-[#6B6B6B] mb-3">Order status</p>
                     <div className="flex items-center gap-2">
                       {[
                         { label: "Placed", step: 0 },
-                        { label: "Preparing", step: 1 },
-                        { label: "On the way", step: 2 },
-                        { label: "Delivered", step: 3 },
+                        { label: "Accepted", step: 1 },
+                        { label: "Preparing", step: 2 },
+                        { label: "On the way", step: 3 },
+                        { label: "Delivered", step: 4 },
                       ].map((step, index) => {
-                        const statusIndex = ["Placed", "Preparing", "On the way", "Delivered"].indexOf(o.status);
                         const active = index <= statusIndex;
                         return (
                           <Fragment key={step.label}>
@@ -599,7 +693,7 @@ export default function ProfilePage() {
                               </div>
                               <p className="max-w-[70px] text-[10px] leading-4 text-[#6B6B6B]">{step.label}</p>
                             </div>
-                            {index < 3 ? (
+                            {index < 4 ? (
                               <div className={`flex-1 h-px self-center ${index < statusIndex ? "bg-[#141B34]" : "bg-gray-200"}`} />
                             ) : null}
                           </Fragment>
@@ -607,9 +701,13 @@ export default function ProfilePage() {
                       })}
                     </div>
                   </div>
+                  <Link href={`/customer/orders/${order.id}`} className="inline-flex justify-center rounded-2xl bg-[#141B34] py-3 text-sm font-semibold text-white">
+                    View order details
+                  </Link>
                 </div>
               </motion.div>
-            ))}
+              );
+            })}
           </div>
         </section>
 
@@ -681,9 +779,9 @@ export default function ProfilePage() {
               value={selectedOrder ?? ""}
             >
               <option value="">Choose an order</option>
-              {orders.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.title} — {o.id}
+              {orders.map((order) => (
+                <option key={order.id} value={order.id}>
+                  {order.restaurant.name} — {order.orderNumber}
                 </option>
               ))}
             </select>
