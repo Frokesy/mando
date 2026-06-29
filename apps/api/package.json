@@ -12,7 +12,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
-    "db:seed:catalog": "tsx src/db/seed-catalog.ts"
+    "db:seed:catalog": "tsx src/db/seed-catalog.ts",
+    "db:seed:test-staff": "tsx src/db/seed-test-staff.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.0.0",

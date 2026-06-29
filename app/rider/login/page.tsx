@@ -4,10 +4,15 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { CautionIcon, PasswordIcon, EyeIcon, EyeOffIcon } from "@/components/svgs/DefaultIcons";
+import { useAuthStore } from "@/store/authStore";
 import { useToastStore } from "@/store/toastStore";
+
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
 
 export default function RiderLogin() {
   const router = useRouter();
+  const setAuth = useAuthStore((s) => s.setAuth);
   const showToast = useToastStore((s) => s.showToast);
   const [formData, setFormData] = useState({ code: "", password: "" });
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -40,9 +45,35 @@ export default function RiderLogin() {
       return;
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    showToast("Logged in as rider", "success");
-    router.push("/rider/dashboard");
+    try {
+      const response = await fetch(`${API_BASE_URL}/rider/login`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(formData),
+      });
+
+      if (!response.ok) {
+        const errorBody = (await response.json().catch(() => null)) as
+          | { message?: string }
+          | null;
+        throw new Error(errorBody?.message ?? "Unable to sign in as rider");
+      }
+
+      const auth = await response.json();
+      setAuth(auth);
+      showToast("Logged in as rider", "success");
+      router.push("/rider/dashboard");
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : "Unable to sign in as rider",
+        "error",
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -108,6 +139,7 @@ export default function RiderLogin() {
 
           <button
             type="submit"
+            disabled={loading}
             className="w-full rounded-2xl bg-[#141B34] px-5 py-4 text-sm font-semibold text-white transition hover:bg-[#101828]"
           >
             {loading ? "Signing in..." : "Sign in"}
