@@ -1,17 +1,77 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import Link from "next/link";
-import { ArrowLeftIcon, MoneyIcon } from "@/components/svgs/DefaultIcons";
+import { ArrowLeftIcon, CopyIcon, MoneyIcon } from "@/components/svgs/DefaultIcons";
 import SalesAgentBottomNav from "@/components/SalesAgentBottomNav";
+import { useToastStore } from "@/store/toastStore";
+
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
+
+type SalesDashboard = {
+  agent: {
+    salesAgent: {
+      tier: string;
+      referralCode: string;
+    };
+  };
+  stats: {
+    referralCount: number;
+    successfulOrderCount: number;
+    totalCommissionAmount: number;
+    influencerThreshold: number;
+    remainingOrdersToInfluencer: number;
+  };
+  influencerSignupUrl: string | null;
+};
 
 export default function SalesAgentReferral() {
-  const [referralStats] = useState([
-    { label: "Active referrals", value: "11", change: "+2 this month" },
-    { label: "Total referral earnings", value: "₦18,900", change: "⭐ Bonus tier unlocked" },
-    { label: "Next milestone", value: "20 orders", change: "9 more to go" },
-  ]);
+  const router = useRouter();
+  const showToast = useToastStore((s) => s.showToast);
+  const [dashboard, setDashboard] = useState<SalesDashboard | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const loadReferral = useCallback(async () => {
+    setLoading(true);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/sales-agent/dashboard`, {
+        credentials: "include",
+      });
+
+      if (response.status === 401 || response.status === 403) {
+        router.push("/sales-agent/login");
+        return;
+      }
+
+      if (!response.ok) throw new Error("Unable to load referral rewards");
+
+      setDashboard((await response.json()) as SalesDashboard);
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : "Unable to load referral rewards",
+        "error",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [router, showToast]);
+
+  useEffect(() => {
+    void loadReferral();
+  }, [loadReferral]);
+
+  const copyInfluencerLink = async () => {
+    if (!dashboard?.influencerSignupUrl) return;
+
+    await navigator.clipboard.writeText(dashboard.influencerSignupUrl);
+    showToast("Influencer referral link copied", "success");
+  };
+
+  const tier = dashboard?.agent.salesAgent.tier ?? "standard";
 
   return (
     <motion.div
@@ -28,69 +88,123 @@ export default function SalesAgentReferral() {
           </Link>
         </header>
 
-        <section className="rounded-[32px] bg-gradient-to-r from-[#FFF7E0] via-[#FFF3CC] to-[#FFF7E0] p-6 shadow-[0_20px_60px_rgba(223,180,0,0.12)] border border-[#F1D86F] mb-6">
-          <div className="flex items-center gap-4 mb-6">
+        <section className="mb-6 rounded-[32px] border border-[#F1D86F] bg-[#FFF7E0] p-6 shadow-[0_20px_60px_rgba(223,180,0,0.12)]">
+          <div className="mb-6 flex items-center gap-4">
             <div className="rounded-3xl bg-white p-4">
               <MoneyIcon />
             </div>
             <div>
               <p className="text-sm font-semibold text-[#6B6B6B]">Referral tier</p>
-              <h1 className="mt-2 text-2xl font-bold text-[#141B34]">Gold status 🏆</h1>
+              <h1 className="mt-2 text-2xl font-bold capitalize text-[#141B34]">
+                {loading ? "Loading..." : tier}
+              </h1>
             </div>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-3">
-            {referralStats.map((stat) => (
-              <div key={stat.label} className="rounded-[24px] bg-white/80 p-4 backdrop-blur">
-                <p className="text-xs text-[#6B6B6B]">{stat.label}</p>
-                <p className="mt-2 text-lg font-bold text-[#141B34]">{stat.value}</p>
-                <p className="mt-1 text-xs text-[#DFB400]">{stat.change}</p>
-              </div>
-            ))}
+            <RewardStat
+              label="Customer referrals"
+              value={`${dashboard?.stats.referralCount ?? 0}`}
+              change="From attributed customer signups"
+            />
+            <RewardStat
+              label="Successful orders"
+              value={`${dashboard?.stats.successfulOrderCount ?? 0}`}
+              change={`${dashboard?.stats.remainingOrdersToInfluencer ?? 10} more to influencer`}
+            />
+            <RewardStat
+              label="Commission"
+              value={formatCurrency(dashboard?.stats.totalCommissionAmount ?? 0)}
+              change="From tracked orders"
+            />
           </div>
         </section>
 
-        <section className="rounded-[28px] bg-white p-5 shadow-sm border border-gray-200 mb-6">
-          <h2 className="text-lg font-semibold text-[#141B34] mb-4">Referral benefits</h2>
-          <div className="space-y-3 text-sm">
-            <div className="flex items-start gap-3">
-              <span className="text-lg">✓</span>
-              <p className="text-[#6B6B6B]">10% commission on all referred orders</p>
-            </div>
-            <div className="flex items-start gap-3">
-              <span className="text-lg">✓</span>
-              <p className="text-[#6B6B6B]">Bonus payments when you hit milestone targets</p>
-            </div>
-            <div className="flex items-start gap-3">
-              <span className="text-lg">✓</span>
-              <p className="text-[#6B6B6B]">Early access to new campaigns and exclusive combos</p>
-            </div>
-            <div className="flex items-start gap-3">
-              <span className="text-lg">✓</span>
-              <p className="text-[#6B6B6B]">Dedicated support and marketing materials</p>
-            </div>
-          </div>
-        </section>
+        {dashboard?.influencerSignupUrl ? (
+          <section className="mb-6 rounded-[28px] border border-gray-200 bg-white p-5 shadow-sm">
+            <h2 className="mb-2 text-lg font-semibold text-[#141B34]">
+              Influencer link unlocked
+            </h2>
+            <p className="break-words text-sm font-semibold text-[#141B34]">
+              {dashboard.influencerSignupUrl}
+            </p>
+            <p className="mt-2 text-sm text-[#6B6B6B]">
+              Share this with people who want to apply as MANDO sales agents. Admin still approves every new sales agent.
+            </p>
+            <button
+              type="button"
+              className="mt-4 inline-flex items-center rounded-2xl bg-[#141B34] px-5 py-3 text-sm font-semibold text-white"
+              onClick={() => void copyInfluencerLink()}
+            >
+              <CopyIcon />
+              <span className="ml-2">Copy link</span>
+            </button>
+          </section>
+        ) : (
+          <section className="mb-6 rounded-[28px] border border-gray-200 bg-white p-5 shadow-sm">
+            <h2 className="mb-2 text-lg font-semibold text-[#141B34]">
+              Influencer access is locked
+            </h2>
+            <p className="text-sm text-[#6B6B6B]">
+              You need {dashboard?.stats.influencerThreshold ?? 10} successful customer orders before your sales-agent referral link appears.
+            </p>
+          </section>
+        )}
 
-        <section className="rounded-[28px] bg-white p-5 shadow-sm border border-gray-200 mb-6">
-          <h2 className="text-lg font-semibold text-[#141B34] mb-4">How referrals work</h2>
+        <section className="mb-6 rounded-[28px] border border-gray-200 bg-white p-5 shadow-sm">
+          <h2 className="mb-4 text-lg font-semibold text-[#141B34]">How sales referrals work</h2>
           <div className="space-y-4">
-            <div>
-              <p className="font-semibold text-[#141B34]">Step 1: Share your link</p>
-              <p className="mt-1 text-sm text-[#6B6B6B]">Share your unique referral URL with customers or on social media.</p>
-            </div>
-            <div>
-              <p className="font-semibold text-[#141B34]">Step 2: They sign up & order</p>
-              <p className="mt-1 text-sm text-[#6B6B6B]">When someone signs up using your link and completes their first order, it counts as a successful referral.</p>
-            </div>
-            <div>
-              <p className="font-semibold text-[#141B34]">Step 3: You earn</p>
-              <p className="mt-1 text-sm text-[#6B6B6B]">Earn commission on every order they place. The more they order, the more you earn.</p>
-            </div>
+            <Step
+              title="Share combo links"
+              text="Every combo share link includes your sales agent ID for customer attribution."
+            />
+            <Step
+              title="Customers sign up and order"
+              text="When they create an account from your combo link, their orders count toward your performance."
+            />
+            <Step
+              title="Unlock influencer status"
+              text="After 10 successful delivered orders, you qualify to invite downline sales agents."
+            />
           </div>
         </section>
       </div>
       <SalesAgentBottomNav />
     </motion.div>
   );
+}
+
+function RewardStat({
+  label,
+  value,
+  change,
+}: {
+  label: string;
+  value: string;
+  change: string;
+}) {
+  return (
+    <div className="rounded-[24px] bg-white/85 p-4">
+      <p className="text-xs text-[#6B6B6B]">{label}</p>
+      <p className="mt-2 text-lg font-bold text-[#141B34]">{value}</p>
+      <p className="mt-1 text-xs text-[#8A6F00]">{change}</p>
+    </div>
+  );
+}
+
+function Step({ title, text }: { title: string; text: string }) {
+  return (
+    <div>
+      <p className="font-semibold text-[#141B34]">{title}</p>
+      <p className="mt-1 text-sm text-[#6B6B6B]">{text}</p>
+    </div>
+  );
+}
+
+function formatCurrency(amount: number) {
+  return new Intl.NumberFormat("en-NG", {
+    style: "currency",
+    currency: "NGN",
+    maximumFractionDigits: 0,
+  }).format(amount);
 }

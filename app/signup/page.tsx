@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { CautionIcon, PasswordIcon, EyeIcon, EyeOffIcon } from "../../components/svgs/DefaultIcons";
+import { SALES_AGENT_ATTRIBUTION_KEY } from "@/components/SalesAttributionCapture";
 import { useAuthStore } from "@/store/authStore";
 import { useToastStore } from "@/store/toastStore";
 
@@ -106,7 +107,11 @@ export default function Signup() {
           "Content-Type": "application/json",
         },
         credentials: "include",
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          ...formData,
+          salesAgentId:
+            window.localStorage.getItem(SALES_AGENT_ATTRIBUTION_KEY) ?? undefined,
+        }),
       });
       const result = await response.json().catch(() => null);
 
@@ -119,6 +124,7 @@ export default function Signup() {
       }
 
       setAuth(result);
+      window.localStorage.removeItem(SALES_AGENT_ATTRIBUTION_KEY);
       showToast("Account created successfully", "success");
       await new Promise((resolve) => window.setTimeout(resolve, 1200));
       router.push("/customer/dashboard");

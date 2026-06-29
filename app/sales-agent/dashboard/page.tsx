@@ -1,24 +1,110 @@
 "use client";
 
-import { useState } from "react";
-import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { CashBundleIcon, CopyIcon, MoneyIcon, TimerIcon } from "@/components/svgs/DefaultIcons";
-import { useToastStore } from "@/store/toastStore";
-import ComboCard from "@/components/cards/ComboCard";import SalesAgentBottomNav from "@/components/SalesAgentBottomNav";
+import { CopyIcon, TimerIcon } from "@/components/svgs/DefaultIcons";
+import SalesAgentBottomNav from "@/components/SalesAgentBottomNav";
 import SalesAgentComboCard from "@/components/cards/SalesAgentComboCard";
-export default function SalesAgentDashboard() {
-  const showToast = useToastStore((s) => s.showToast);
-  const [referralCount] = useState(11);
-  const [earnings] = useState("₦124,500");
-  const [referralEarnings] = useState("₦18,900");
-  const [uniqueUrl] = useState("https://mando.app/r/agent-123");
+import { useToastStore } from "@/store/toastStore";
 
-  const combos = [
-    { id: 1, title: "Jollof + Suya", price: "N2,400", vendor: "City Grill" },
-    { id: 2, title: "Pounded Yam + Ogbono", price: "N4,100", vendor: "Taste Palace" },
-    { id: 3, title: "Spicy Rice + Fish", price: "N3,200", vendor: "Ocean Bites" },
-  ];
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
+
+type ShareCombo = {
+  id: string;
+  name: string;
+  description: string | null;
+  priceAmount: number;
+  imageUrl: string | null;
+  restaurantName: string;
+  shareUrl: string;
+};
+
+type SalesDashboard = {
+  agent: {
+    profile: {
+      fullName: string;
+    };
+    salesAgent: {
+      agentCode: string;
+      referralCode: string;
+      tier: string;
+    };
+  };
+  stats: {
+    referralCount: number;
+    successfulOrderCount: number;
+    trackedRevenueAmount: number;
+    totalCommissionAmount: number;
+    influencerThreshold: number;
+    remainingOrdersToInfluencer: number;
+  };
+  shareCombos: ShareCombo[];
+  influencerSignupUrl: string | null;
+};
+
+export default function SalesAgentDashboard() {
+  const router = useRouter();
+  const showToast = useToastStore((s) => s.showToast);
+  const [dashboard, setDashboard] = useState<SalesDashboard | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const loadDashboard = useCallback(async () => {
+    setLoading(true);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/sales-agent/dashboard`, {
+        credentials: "include",
+      });
+
+      if (response.status === 401 || response.status === 403) {
+        router.push("/sales-agent/login");
+        return;
+      }
+
+      if (!response.ok) throw new Error("Unable to load sales dashboard");
+
+      setDashboard((await response.json()) as SalesDashboard);
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : "Unable to load sales dashboard",
+        "error",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [router, showToast]);
+
+  useEffect(() => {
+    void loadDashboard();
+  }, [loadDashboard]);
+
+  const copyInfluencerLink = async () => {
+    if (!dashboard?.influencerSignupUrl) return;
+
+    await navigator.clipboard.writeText(dashboard.influencerSignupUrl);
+    showToast("Influencer referral link copied", "success");
+  };
+
+  const shareInfluencerLink = async () => {
+    if (!dashboard?.influencerSignupUrl) return;
+
+    const text =
+      "Apply to become a MANDO sales agent through my referral link. Admin approval is still required.";
+
+    if (navigator.share) {
+      await navigator.share({
+        title: "Join MANDO as a sales agent",
+        text,
+        url: dashboard.influencerSignupUrl,
+      });
+      return;
+    }
+
+    await navigator.clipboard.writeText(`${text}\n${dashboard.influencerSignupUrl}`);
+    showToast("Influencer referral text copied", "success");
+  };
 
   return (
     <motion.div
@@ -28,83 +114,152 @@ export default function SalesAgentDashboard() {
       className="min-h-screen bg-[#F8F8F8] pb-28"
     >
       <div className="p-6">
-        <header className="mb-6 flex items-center justify-between">
+        <header className="mb-6 flex items-center justify-between gap-4">
           <div>
             <p className="text-sm font-semibold text-[#A4A4A4]">Sales agent dashboard</p>
-            <h1 className="mt-2 text-2xl font-bold text-[#141B34]">Welcome back, Agent Bimpe</h1>
+            <h1 className="mt-2 text-2xl font-bold text-[#141B34]">
+              {loading
+                ? "Loading dashboard..."
+                : `Welcome back, ${dashboard?.agent.profile.fullName ?? "Agent"}`}
+            </h1>
+            {dashboard && (
+              <p className="mt-1 text-sm font-semibold capitalize text-[#6B6B6B]">
+                {dashboard.agent.salesAgent.tier} tier
+              </p>
+            )}
           </div>
           <div className="rounded-3xl bg-[#FFF7E0] p-3">
             <TimerIcon />
           </div>
         </header>
 
-        <div className="grid gap-4 sm:grid-cols-2 mb-6">
-          <div className="rounded-[28px] bg-white p-5 shadow-sm border border-gray-200">
-            <p className="text-sm text-[#6B6B6B]">Total earnings</p>
-            <p className="mt-3 text-3xl font-bold text-[#141B34]">{earnings}</p>
-            <div className="mt-4 space-y-2 text-sm text-[#A4A4A4]">
-              <p>Order commissions + Referral bonus</p>
-              <p className="text-xs">Referral: {referralEarnings}</p>
-            </div>
-          </div>
-          <div className="rounded-[28px] bg-white p-5 shadow-sm border border-gray-200">
-            <p className="text-sm text-[#6B6B6B]">Successful orders</p>
-            <p className="mt-3 text-3xl font-bold text-[#141B34]">{referralCount}</p>
-            <p className="mt-4 text-sm text-[#A4A4A4]">Tracked orders using your unique links</p>
-          </div>
+        <div className="mb-6 grid gap-4 sm:grid-cols-2">
+          <StatCard
+            label="Total commission"
+            value={formatCurrency(dashboard?.stats.totalCommissionAmount ?? 0)}
+            helper={`Tracked revenue ${formatCurrency(dashboard?.stats.trackedRevenueAmount ?? 0)}`}
+          />
+          <StatCard
+            label="Successful orders"
+            value={`${dashboard?.stats.successfulOrderCount ?? 0}`}
+            helper={
+              dashboard?.agent.salesAgent.tier === "influencer"
+                ? "Influencer tier unlocked"
+                : `${dashboard?.stats.remainingOrdersToInfluencer ?? 10} more to unlock influencer`
+            }
+          />
         </div>
 
-        <section className="rounded-[28px] bg-white p-5 shadow-sm border border-gray-200 mb-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm text-[#6B6B6B]">Your shareable link</p>
-              <p className="mt-2 text-sm font-semibold text-[#141B34] break-words">{uniqueUrl}</p>
-            </div>
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <button
-                type="button"
-                className="inline-flex items-center justify-center rounded-2xl bg-[#141B34] px-5 py-3 text-sm font-semibold text-white"
-                onClick={() => {
-                  void navigator.clipboard.writeText(uniqueUrl);
-                  showToast("Link copied to clipboard", "success");
-                }}
-              >
-                <CopyIcon />
-                <span className="ml-2">Copy link</span>
-              </button>
-              <button
-                type="button"
-                className="inline-flex items-center justify-center rounded-2xl bg-[#DFB400] px-5 py-3 text-sm font-semibold text-[#141B34]"
-                onClick={() => showToast("Share link on socials", "info")}
-              >
-                Share
-              </button>
-            </div>
-          </div>
-        </section>
+        {loading ? (
+          <DashboardSkeleton />
+        ) : (
+          <>
+            {dashboard?.influencerSignupUrl ? (
+              <section className="mb-6 rounded-[28px] border border-gray-200 bg-white p-5 shadow-sm">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm text-[#6B6B6B]">Influencer referral link</p>
+                    <p className="mt-2 break-words text-sm font-semibold text-[#141B34]">
+                      {dashboard.influencerSignupUrl}
+                    </p>
+                    <p className="mt-2 text-xs text-[#A4A4A4]">
+                      Downline agents still require admin approval.
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-3 sm:flex-row">
+                    <button
+                      type="button"
+                      className="inline-flex items-center justify-center rounded-2xl bg-[#141B34] px-5 py-3 text-sm font-semibold text-white"
+                      onClick={() => void copyInfluencerLink()}
+                    >
+                      <CopyIcon />
+                      <span className="ml-2">Copy</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="inline-flex items-center justify-center rounded-2xl bg-[#DFB400] px-5 py-3 text-sm font-semibold text-[#141B34]"
+                      onClick={() => void shareInfluencerLink()}
+                    >
+                      Share
+                    </button>
+                  </div>
+                </div>
+              </section>
+            ) : (
+              <section className="mb-6 rounded-[28px] border border-gray-200 bg-white p-5 shadow-sm">
+                <p className="text-sm font-semibold text-[#141B34]">
+                  Influencer referral unlocks after 10 successful orders.
+                </p>
+                <p className="mt-2 text-sm text-[#6B6B6B]">
+                  Keep sharing combo links. Your dashboard will reveal the sales-agent referral link once you qualify.
+                </p>
+              </section>
+            )}
 
-        <section className="mb-6">
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <h2 className="text-xl font-semibold text-[#141B34]">Curated combos</h2>
-              <p className="text-sm text-[#6B6B6B]">Share these offers and earn when customers purchase through your link.</p>
-            </div>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            {combos.map((combo) => (
-              <SalesAgentComboCard
-                key={combo.id}
-                title={combo.title}
-                price={combo.price}
-                vendor={combo.vendor}
-                imgUrl="/dummy-img.jpg"
-                uniqueUrl={uniqueUrl}
-              />
-            ))}
-          </div>
-        </section>
+            <section className="mb-6">
+              <div className="mb-4">
+                <h2 className="text-xl font-semibold text-[#141B34]">Curated combos</h2>
+                <p className="text-sm text-[#6B6B6B]">
+                  Each shared combo link carries your agent ID for customer attribution.
+                </p>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                {(dashboard?.shareCombos ?? []).map((combo) => (
+                  <SalesAgentComboCard
+                    key={combo.id}
+                    title={combo.name}
+                    price={formatCurrency(combo.priceAmount)}
+                    vendor={combo.restaurantName}
+                    imgUrl={combo.imageUrl ?? "/dummy-img.jpg"}
+                    uniqueUrl={combo.shareUrl}
+                    description={combo.description}
+                  />
+                ))}
+              </div>
+            </section>
+          </>
+        )}
       </div>
       <SalesAgentBottomNav />
     </motion.div>
   );
+}
+
+function StatCard({
+  label,
+  value,
+  helper,
+}: {
+  label: string;
+  value: string;
+  helper: string;
+}) {
+  return (
+    <div className="rounded-[28px] border border-gray-200 bg-white p-5 shadow-sm">
+      <p className="text-sm text-[#6B6B6B]">{label}</p>
+      <p className="mt-3 text-3xl font-bold text-[#141B34]">{value}</p>
+      <p className="mt-4 text-sm text-[#A4A4A4]">{helper}</p>
+    </div>
+  );
+}
+
+function DashboardSkeleton() {
+  return (
+    <div className="space-y-4">
+      {[0, 1, 2].map((item) => (
+        <div
+          key={item}
+          className="h-40 animate-pulse rounded-[28px] border border-gray-200 bg-white"
+        />
+      ))}
+    </div>
+  );
+}
+
+function formatCurrency(amount: number) {
+  return new Intl.NumberFormat("en-NG", {
+    style: "currency",
+    currency: "NGN",
+    maximumFractionDigits: 0,
+  }).format(amount);
 }

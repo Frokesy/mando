@@ -5,6 +5,7 @@ import { authRoutes } from './routes/auth.js'
 import { catalogRoutes } from './routes/catalog.js'
 import { customerRoutes } from './routes/customer.js'
 import { riderRoutes } from './routes/rider.js'
+import { salesAgentRoutes } from './routes/sales-agent.js'
 import { uploadRoutes } from './routes/uploads.js'
 
 type BuildAppOptions = {
@@ -43,6 +44,7 @@ export function buildApp(options: BuildAppOptions = {}) {
   app.register(customerRoutes, { prefix: '/customer' })
   app.register(catalogRoutes, { prefix: '/customer' })
   app.register(riderRoutes, { prefix: '/rider' })
+  app.register(salesAgentRoutes, { prefix: '/sales-agent' })
   app.register(uploadRoutes, { prefix: '/uploads' })
 
   app.get('/health', async () => {

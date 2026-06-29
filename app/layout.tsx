@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { Suspense } from "react";
 import "./globals.css";
 import ServiceWorkerRegister from "../components/ServiceWorkerRegister";
+import SalesAttributionCapture from "@/components/SalesAttributionCapture";
 import ToastContainer from "@/components/ToastContainer";
 
 const geistSans = Geist({
@@ -39,6 +41,9 @@ export default function RootLayout({
           {children}
         </div>
         <ToastContainer />
+        <Suspense fallback={null}>
+          <SalesAttributionCapture />
+        </Suspense>
         <ServiceWorkerRegister />
       </body>
     </html>

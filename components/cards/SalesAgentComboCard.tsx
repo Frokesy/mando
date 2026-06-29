@@ -8,6 +8,7 @@ type SalesAgentComboCardProps = {
   vendor?: string;
   imgUrl?: string;
   uniqueUrl?: string;
+  description?: string | null;
 };
 
 const SalesAgentComboCard = ({
@@ -16,19 +17,31 @@ const SalesAgentComboCard = ({
   vendor = "Mama Chef Cafe",
   imgUrl = "/dummy-img.jpg",
   uniqueUrl = "https://mando.app/r/agent-123",
+  description,
 }: SalesAgentComboCardProps) => {
   const showToast = useToastStore((s) => s.showToast);
 
   const handleShare = async () => {
-    const shareText = `Check out this amazing combo: ${title}\n${price}\nFrom ${vendor}\n\nShop now: ${uniqueUrl}`;
+    const shareText = `Check out this MANDO combo: ${title}\n${price}\nFrom ${vendor}${description ? `\n${description}` : ""}\n\nOrder here: ${uniqueUrl}`;
 
     if (navigator.share) {
       try {
-        await navigator.share({
+        const imageFile = await getShareImageFile(imgUrl, title);
+        const sharePayload: ShareData = {
           title: title,
           text: shareText,
           url: uniqueUrl,
-        });
+        };
+
+        if (
+          imageFile &&
+          "canShare" in navigator &&
+          navigator.canShare({ files: [imageFile] })
+        ) {
+          sharePayload.files = [imageFile];
+        }
+
+        await navigator.share(sharePayload);
         showToast("Shared successfully", "success");
       } catch (err) {
         if ((err as Error).name !== "AbortError") {
@@ -68,5 +81,22 @@ const SalesAgentComboCard = ({
     </div>
   );
 };
+
+async function getShareImageFile(imgUrl: string, title: string) {
+  try {
+    const response = await fetch(imgUrl);
+    if (!response.ok) return null;
+
+    const blob = await response.blob();
+    if (!blob.type.startsWith("image/")) return null;
+
+    const extension = blob.type.split("/")[1] || "jpg";
+    return new File([blob], `${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.${extension}`, {
+      type: blob.type,
+    });
+  } catch {
+    return null;
+  }
+}
 
 export default SalesAgentComboCard;

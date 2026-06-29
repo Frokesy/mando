@@ -13,7 +13,14 @@ import {
 } from '../auth/index.js'
 import { getCurrentSessionContext } from '../auth/current-session.js'
 import { database } from '../db/client.js'
-import { authSessions, profiles, userRoles, users } from '../db/schema.js'
+import {
+  authSessions,
+  profiles,
+  referrals,
+  salesAgentProfiles,
+  userRoles,
+  users,
+} from '../db/schema.js'
 
 const signupBodySchema = z.object({
   email: z.email().trim().toLowerCase(),
@@ -23,6 +30,7 @@ const signupBodySchema = z.object({
     .min(6)
     .regex(/[A-Z]/, 'Password must include at least one uppercase letter.')
     .regex(/\d/, 'Password must include at least one number.'),
+  salesAgentId: z.uuid().optional(),
 })
 
 const loginBodySchema = z.object({
@@ -45,7 +53,7 @@ export async function authRoutes(app: FastifyInstance) {
       })
     }
 
-    const { email, fullName, password } = parsedBody.data
+    const { email, fullName, password, salesAgentId } = parsedBody.data
     const session = createSessionToken()
 
     try {
@@ -76,6 +84,28 @@ export async function authRoutes(app: FastifyInstance) {
           userId: createdUser.id,
           role: 'customer',
         })
+
+        if (salesAgentId) {
+          const [salesAgent] = await tx
+            .select({
+              userId: salesAgentProfiles.userId,
+              referralCode: salesAgentProfiles.referralCode,
+            })
+            .from(salesAgentProfiles)
+            .where(eq(salesAgentProfiles.userId, salesAgentId))
+            .limit(1)
+
+          if (salesAgent) {
+            await tx
+              .insert(referrals)
+              .values({
+                salesAgentId: salesAgent.userId,
+                customerId: createdUser.id,
+                referralCode: salesAgent.referralCode,
+              })
+              .onConflictDoNothing()
+          }
+        }
 
         await tx.insert(authSessions).values({
           userId: createdUser.id,
