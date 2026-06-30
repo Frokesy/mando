@@ -14,6 +14,8 @@ const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
 const SKIP_ROUTEPAY_REDIRECT =
   process.env.NEXT_PUBLIC_SKIP_ROUTEPAY_REDIRECT === "true";
+const DELIVERY_FEE_AMOUNT = 400;
+const SERVICE_CHARGE_AMOUNT = 50;
 
 type SavedAddress = {
   id: string;
@@ -79,6 +81,7 @@ const CartPage = () => {
   const updateCustomerProfile = useAuthStore((s) => s.updateCustomerProfile);
   const items = useCartStore((s) => s.items);
   const total = useCartStore((s) => s.total)();
+  const orderTotal = total + DELIVERY_FEE_AMOUNT + SERVICE_CHARGE_AMOUNT;
   const deliveryAddress = useCartStore((s) => s.deliveryAddress);
   const phoneNumber = useCartStore((s) => s.phoneNumber);
   const setDeliveryAddress = useCartStore((s) => s.setDeliveryAddress);
@@ -94,7 +97,7 @@ const CartPage = () => {
   useEffect(() => {
     let mounted = true;
 
-    fetchCurrentUser().then((currentAuth) => {
+    fetchCurrentUser("customer").then((currentAuth) => {
       if (!mounted || !currentAuth?.profile?.phone) return;
 
       setPhoneNumber(currentAuth.profile.phone);
@@ -334,12 +337,17 @@ const CartPage = () => {
 
         <div className="flex items-center justify-between">
           <span className="text-[14px] text-[#A4A4A4]">Delivery</span>
-          <span className="font-semibold">₦0</span>
+          <span className="font-semibold">₦{DELIVERY_FEE_AMOUNT.toLocaleString()}</span>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <span className="text-[14px] text-[#A4A4A4]">Service charge</span>
+          <span className="font-semibold">₦{SERVICE_CHARGE_AMOUNT.toLocaleString()}</span>
         </div>
 
         <div className="flex items-center justify-between text-[16px] font-semibold">
           <span>Total</span>
-          <span>₦{total.toLocaleString()}</span>
+          <span>₦{orderTotal.toLocaleString()}</span>
         </div>
 
         <button

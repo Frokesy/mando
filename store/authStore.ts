@@ -27,7 +27,7 @@ type AuthState = {
   auth: AuthPayload | null;
   loading: boolean;
   setAuth: (auth: AuthPayload | null) => void;
-  fetchCurrentUser: () => Promise<AuthPayload | null>;
+  fetchCurrentUser: (requiredRole?: string) => Promise<AuthPayload | null>;
   updateCustomerProfile: (profile: CustomerProfileUpdate) => Promise<AuthPayload>;
   logout: () => Promise<void>;
 };
@@ -43,7 +43,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   auth: null,
   loading: false,
   setAuth: (auth) => set({ auth }),
-  fetchCurrentUser: async () => {
+  fetchCurrentUser: async (requiredRole) => {
     set({ loading: true });
 
     try {
@@ -57,6 +57,11 @@ export const useAuthStore = create<AuthState>((set) => ({
       }
 
       const auth = (await response.json()) as AuthPayload;
+      if (requiredRole && !auth.roles.includes(requiredRole)) {
+        set({ auth: null });
+        return null;
+      }
+
       set({ auth });
       return auth;
     } finally {

@@ -9,6 +9,7 @@ import {
   addresses,
   comboItems,
   combos,
+  commissions,
   deliveries,
   menuItems,
   notifications,
@@ -20,7 +21,10 @@ import {
   orderStatusEvents,
   payments,
   profiles,
+  referrals,
+  restaurantEarnings,
   restaurants,
+  salesAgentProfiles,
   serviceAreas,
 } from '../db/schema.js'
 
@@ -104,6 +108,11 @@ const reviewOrderBodySchema = z.object({
 })
 
 const MAX_CUSTOMER_ADDRESSES = 3
+const SERVICE_CHARGE_AMOUNT = 50
+const DELIVERY_FEE_AMOUNT = 400
+const RIDER_DELIVERY_EARNING_BPS = 8000
+const FIRST_ORDER_AGENT_COMMISSION_AMOUNT = 500
+const FIRST_ORDER_UPLINE_COMMISSION_AMOUNT = 100
 const CUSTOMER_CANCELLABLE_ORDER_STATUSES = [
   'pending_payment',
   'paid',
@@ -147,11 +156,9 @@ export async function customerRoutes(app: FastifyInstance) {
   })
 
   app.get('/notifications', async (request, reply) => {
-    const sessionContext = await getCurrentSessionContext(request.headers.cookie)
+    const sessionContext = await requireCustomer(request.headers.cookie, reply)
 
-    if (!sessionContext) {
-      return sendUnauthenticated(reply)
-    }
+    if (!sessionContext) return
 
     const userNotifications = await database
       .select({
@@ -175,11 +182,9 @@ export async function customerRoutes(app: FastifyInstance) {
   })
 
   app.patch('/notifications/:notificationId/read', async (request, reply) => {
-    const sessionContext = await getCurrentSessionContext(request.headers.cookie)
+    const sessionContext = await requireCustomer(request.headers.cookie, reply)
 
-    if (!sessionContext) {
-      return sendUnauthenticated(reply)
-    }
+    if (!sessionContext) return
 
     const parsedParams = notificationParamsSchema.safeParse(request.params)
 
@@ -212,11 +217,9 @@ export async function customerRoutes(app: FastifyInstance) {
   })
 
   app.post('/notifications/read-all', async (request, reply) => {
-    const sessionContext = await getCurrentSessionContext(request.headers.cookie)
+    const sessionContext = await requireCustomer(request.headers.cookie, reply)
 
-    if (!sessionContext) {
-      return sendUnauthenticated(reply)
-    }
+    if (!sessionContext) return
 
     await database
       .update(notifications)
@@ -227,11 +230,9 @@ export async function customerRoutes(app: FastifyInstance) {
   })
 
   app.patch('/profile', async (request, reply) => {
-    const sessionContext = await getCurrentSessionContext(request.headers.cookie)
+    const sessionContext = await requireCustomer(request.headers.cookie, reply)
 
-    if (!sessionContext) {
-      return sendUnauthenticated(reply)
-    }
+    if (!sessionContext) return
 
     const parsedBody = updateProfileBodySchema.safeParse(request.body)
 
@@ -289,11 +290,9 @@ export async function customerRoutes(app: FastifyInstance) {
   })
 
   app.get('/addresses', async (request, reply) => {
-    const sessionContext = await getCurrentSessionContext(request.headers.cookie)
+    const sessionContext = await requireCustomer(request.headers.cookie, reply)
 
-    if (!sessionContext) {
-      return sendUnauthenticated(reply)
-    }
+    if (!sessionContext) return
 
     const userAddresses = await selectUserAddresses(sessionContext.userId)
 
@@ -303,11 +302,9 @@ export async function customerRoutes(app: FastifyInstance) {
   })
 
   app.post('/addresses', async (request, reply) => {
-    const sessionContext = await getCurrentSessionContext(request.headers.cookie)
+    const sessionContext = await requireCustomer(request.headers.cookie, reply)
 
-    if (!sessionContext) {
-      return sendUnauthenticated(reply)
-    }
+    if (!sessionContext) return
 
     const parsedBody = addressBodySchema.safeParse(request.body)
 
@@ -377,11 +374,9 @@ export async function customerRoutes(app: FastifyInstance) {
   })
 
   app.patch('/addresses/:addressId', async (request, reply) => {
-    const sessionContext = await getCurrentSessionContext(request.headers.cookie)
+    const sessionContext = await requireCustomer(request.headers.cookie, reply)
 
-    if (!sessionContext) {
-      return sendUnauthenticated(reply)
-    }
+    if (!sessionContext) return
 
     const parsedParams = addressParamsSchema.safeParse(request.params)
 
@@ -461,11 +456,9 @@ export async function customerRoutes(app: FastifyInstance) {
   })
 
   app.post('/addresses/:addressId/default', async (request, reply) => {
-    const sessionContext = await getCurrentSessionContext(request.headers.cookie)
+    const sessionContext = await requireCustomer(request.headers.cookie, reply)
 
-    if (!sessionContext) {
-      return sendUnauthenticated(reply)
-    }
+    if (!sessionContext) return
 
     const parsedParams = addressParamsSchema.safeParse(request.params)
 
@@ -508,11 +501,9 @@ export async function customerRoutes(app: FastifyInstance) {
   })
 
   app.delete('/addresses/:addressId', async (request, reply) => {
-    const sessionContext = await getCurrentSessionContext(request.headers.cookie)
+    const sessionContext = await requireCustomer(request.headers.cookie, reply)
 
-    if (!sessionContext) {
-      return sendUnauthenticated(reply)
-    }
+    if (!sessionContext) return
 
     const parsedParams = addressParamsSchema.safeParse(request.params)
 
@@ -560,11 +551,9 @@ export async function customerRoutes(app: FastifyInstance) {
   })
 
   app.post('/orders', async (request, reply) => {
-    const sessionContext = await getCurrentSessionContext(request.headers.cookie)
+    const sessionContext = await requireCustomer(request.headers.cookie, reply)
 
-    if (!sessionContext) {
-      return sendUnauthenticated(reply)
-    }
+    if (!sessionContext) return
 
     const parsedBody = createOrderBodySchema.safeParse(request.body)
 
@@ -684,9 +673,16 @@ export async function customerRoutes(app: FastifyInstance) {
       (total, item) => total + item.lineTotalAmount,
       0,
     )
-    const deliveryFeeAmount = 0
+    const deliveryFeeAmount = DELIVERY_FEE_AMOUNT
+    const serviceChargeAmount = SERVICE_CHARGE_AMOUNT
     const discountAmount = 0
-    const totalAmount = subtotalAmount + deliveryFeeAmount - discountAmount
+    const totalAmount = subtotalAmount + deliveryFeeAmount + serviceChargeAmount - discountAmount
+    const restaurantCommissionBps = comboRows[0]?.restaurantPlatformCommissionBps ?? 1000
+    const restaurantPlatformFeeAmount = Math.round(
+      (subtotalAmount * restaurantCommissionBps) / 10000,
+    )
+    const restaurantNetAmount = subtotalAmount - restaurantPlatformFeeAmount
+    const firstOrderReferral = await getUnqualifiedCustomerReferral(sessionContext.userId)
 
     const createdOrder = await database.transaction(async (tx) => {
       const [order] = await tx
@@ -706,6 +702,7 @@ export async function customerRoutes(app: FastifyInstance) {
           status: 'pending_payment',
           subtotalAmount,
           deliveryFeeAmount,
+          serviceChargeAmount,
           discountAmount,
           totalAmount,
           ...(body.customerNote ? { customerNote: body.customerNote } : {}),
@@ -759,7 +756,51 @@ export async function customerRoutes(app: FastifyInstance) {
         orderId: order.id,
         serviceAreaId: deliveryAddress.serviceArea.id,
         deliveryFeeAmount,
+        riderEarningAmount: Math.round(
+          (deliveryFeeAmount * RIDER_DELIVERY_EARNING_BPS) / 10000,
+        ),
       })
+
+      await tx.insert(restaurantEarnings).values({
+        restaurantId,
+        orderId: order.id,
+        grossAmount: subtotalAmount,
+        platformFeeAmount: restaurantPlatformFeeAmount,
+        netAmount: restaurantNetAmount,
+        status: 'pending',
+      })
+
+      if (firstOrderReferral) {
+        await tx
+          .update(referrals)
+          .set({
+            firstEligibleOrderId: order.id,
+            status: 'qualified',
+          })
+          .where(eq(referrals.id, firstOrderReferral.id))
+
+        await tx.insert(commissions).values({
+          salesAgentId: firstOrderReferral.salesAgentId,
+          orderId: order.id,
+          referralId: firstOrderReferral.id,
+          rateBps: 0,
+          eligibleAmount: subtotalAmount,
+          commissionAmount: FIRST_ORDER_AGENT_COMMISSION_AMOUNT,
+          status: 'pending',
+        })
+
+        if (firstOrderReferral.uplineSalesAgentId) {
+          await tx.insert(commissions).values({
+            salesAgentId: firstOrderReferral.uplineSalesAgentId,
+            orderId: order.id,
+            referralId: firstOrderReferral.id,
+            rateBps: 0,
+            eligibleAmount: subtotalAmount,
+            commissionAmount: FIRST_ORDER_UPLINE_COMMISSION_AMOUNT,
+            status: 'pending',
+          })
+        }
+      }
 
       await tx.insert(orderStatusEvents).values({
         orderId: order.id,
@@ -785,11 +826,9 @@ export async function customerRoutes(app: FastifyInstance) {
   })
 
   app.get('/orders', async (request, reply) => {
-    const sessionContext = await getCurrentSessionContext(request.headers.cookie)
+    const sessionContext = await requireCustomer(request.headers.cookie, reply)
 
-    if (!sessionContext) {
-      return sendUnauthenticated(reply)
-    }
+    if (!sessionContext) return
 
     const orderRows = await selectCustomerOrderSummaries(sessionContext.userId)
 
@@ -799,11 +838,9 @@ export async function customerRoutes(app: FastifyInstance) {
   })
 
   app.get('/orders/:orderId', async (request, reply) => {
-    const sessionContext = await getCurrentSessionContext(request.headers.cookie)
+    const sessionContext = await requireCustomer(request.headers.cookie, reply)
 
-    if (!sessionContext) {
-      return sendUnauthenticated(reply)
-    }
+    if (!sessionContext) return
 
     const parsedParams = orderParamsSchema.safeParse(request.params)
 
@@ -832,11 +869,9 @@ export async function customerRoutes(app: FastifyInstance) {
   })
 
   app.post('/orders/:orderId/cancel', async (request, reply) => {
-    const sessionContext = await getCurrentSessionContext(request.headers.cookie)
+    const sessionContext = await requireCustomer(request.headers.cookie, reply)
 
-    if (!sessionContext) {
-      return sendUnauthenticated(reply)
-    }
+    if (!sessionContext) return
 
     const parsedParams = orderParamsSchema.safeParse(request.params)
 
@@ -911,11 +946,9 @@ export async function customerRoutes(app: FastifyInstance) {
   })
 
   app.post('/orders/:orderId/report', async (request, reply) => {
-    const sessionContext = await getCurrentSessionContext(request.headers.cookie)
+    const sessionContext = await requireCustomer(request.headers.cookie, reply)
 
-    if (!sessionContext) {
-      return sendUnauthenticated(reply)
-    }
+    if (!sessionContext) return
 
     const parsedParams = orderParamsSchema.safeParse(request.params)
 
@@ -965,11 +998,9 @@ export async function customerRoutes(app: FastifyInstance) {
   })
 
   app.post('/orders/:orderId/review', async (request, reply) => {
-    const sessionContext = await getCurrentSessionContext(request.headers.cookie)
+    const sessionContext = await requireCustomer(request.headers.cookie, reply)
 
-    if (!sessionContext) {
-      return sendUnauthenticated(reply)
-    }
+    if (!sessionContext) return
 
     const parsedParams = orderParamsSchema.safeParse(request.params)
 
@@ -1103,6 +1134,7 @@ function getAvailableCombos(comboIds: string[]) {
       name: combos.name,
       restaurantId: combos.restaurantId,
       priceAmount: combos.priceAmount,
+      restaurantPlatformCommissionBps: restaurants.platformCommissionBps,
     })
     .from(combos)
     .innerJoin(restaurants, eq(combos.restaurantId, restaurants.id))
@@ -1127,6 +1159,26 @@ function getComboComponents(comboIds: string[]) {
     .from(comboItems)
     .innerJoin(menuItems, eq(comboItems.menuItemId, menuItems.id))
     .where(inArray(comboItems.comboId, comboIds))
+}
+
+async function getUnqualifiedCustomerReferral(customerId: string) {
+  const [referral] = await database
+    .select({
+      id: referrals.id,
+      salesAgentId: referrals.salesAgentId,
+      uplineSalesAgentId: salesAgentProfiles.uplineSalesAgentId,
+    })
+    .from(referrals)
+    .innerJoin(salesAgentProfiles, eq(referrals.salesAgentId, salesAgentProfiles.userId))
+    .where(
+      and(
+        eq(referrals.customerId, customerId),
+        eq(referrals.status, 'attributed'),
+      ),
+    )
+    .limit(1)
+
+  return referral ?? null
 }
 
 type ComboComponent = Awaited<ReturnType<typeof getComboComponents>>[number]
@@ -1239,6 +1291,7 @@ async function getCustomerOrder(userId: string, orderId: string) {
       currency: orders.currency,
       subtotalAmount: orders.subtotalAmount,
       deliveryFeeAmount: orders.deliveryFeeAmount,
+      serviceChargeAmount: orders.serviceChargeAmount,
       discountAmount: orders.discountAmount,
       totalAmount: orders.totalAmount,
       customerNote: orders.customerNote,
@@ -1404,6 +1457,7 @@ function serializeOrderDetail(
     currency: order.currency,
     subtotalAmount: order.subtotalAmount,
     deliveryFeeAmount: order.deliveryFeeAmount,
+    serviceChargeAmount: order.serviceChargeAmount,
     discountAmount: order.discountAmount,
     totalAmount: order.totalAmount,
     customerNote: order.customerNote,
@@ -1438,6 +1492,28 @@ function isCustomerCancellableOrderStatus(status: string) {
   return CUSTOMER_CANCELLABLE_ORDER_STATUSES.includes(
     status as (typeof CUSTOMER_CANCELLABLE_ORDER_STATUSES)[number],
   )
+}
+
+async function requireCustomer(cookieHeader: string | undefined, reply: FastifyReply) {
+  const sessionContext = await getCurrentSessionContext(cookieHeader)
+
+  if (!sessionContext) {
+    sendUnauthenticated(reply)
+    return null
+  }
+
+  if (!sessionContext.authPayload.roles.includes('customer')) {
+    reply
+      .status(403)
+      .header('Set-Cookie', serializeClearSessionCookie())
+      .send({
+        error: 'forbidden',
+        message: 'Please log in with a customer account to continue.',
+      })
+    return null
+  }
+
+  return sessionContext
 }
 
 async function getUserAddress(userId: string, addressId: string) {

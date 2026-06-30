@@ -171,7 +171,7 @@ export default function ProfilePage() {
   useEffect(() => {
     let mounted = true;
 
-    fetchCurrentUser()
+    fetchCurrentUser("customer")
       .then((currentAuth) => {
         if (!mounted) return;
 

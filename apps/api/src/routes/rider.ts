@@ -12,6 +12,7 @@ import {
 import { database } from '../db/client.js'
 import {
   authSessions,
+  commissions,
   deliveries,
   deliveryStatusEvents,
   notifications,
@@ -19,11 +20,14 @@ import {
   orders,
   payoutAccounts,
   profiles,
+  restaurantEarnings,
   restaurants,
   riderProfiles,
   serviceAreas,
   users,
 } from '../db/schema.js'
+
+const RIDER_DELIVERY_EARNING_BPS = 8000
 
 const availabilityBodySchema = z.object({
   availabilityStatus: z.enum(['offline', 'available', 'busy']),
@@ -406,7 +410,9 @@ async function updateDeliveryAssignment(
 
   if (options.action === 'delivered') {
     deliveryUpdate.deliveredAt = now
-    deliveryUpdate.riderEarningAmount = target.deliveryFeeAmount
+    deliveryUpdate.riderEarningAmount = Math.round(
+      (target.deliveryFeeAmount * RIDER_DELIVERY_EARNING_BPS) / 10000,
+    )
   }
 
   await database.transaction(async (tx) => {
@@ -449,6 +455,24 @@ async function updateDeliveryAssignment(
       .where(eq(riderProfiles.userId, auth.userId))
 
     if (options.action === 'delivered') {
+      await tx
+        .update(commissions)
+        .set({
+          status: 'earned',
+          earnedAt: now,
+          updatedAt: now,
+        })
+        .where(eq(commissions.orderId, target.orderId))
+
+      await tx
+        .update(restaurantEarnings)
+        .set({
+          status: 'available',
+          availableAt: now,
+          updatedAt: now,
+        })
+        .where(eq(restaurantEarnings.orderId, target.orderId))
+
       await tx.insert(notifications).values({
         userId: target.customerId,
         type: 'order_delivered',

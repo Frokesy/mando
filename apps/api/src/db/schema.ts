@@ -360,6 +360,7 @@ export const salesAgentProfiles = pgTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     agentCode: text('agent_code').notNull(),
     referralCode: text('referral_code').notNull(),
+    uplineSalesAgentId: uuid('upline_sales_agent_id').references(() => users.id),
     status: salesAgentStatusEnum('status').notNull().default('pending'),
     tier: text('tier').notNull().default('standard'),
     commissionRateBps: integer('commission_rate_bps').notNull().default(0),
@@ -392,6 +393,9 @@ export const restaurants = pgTable(
     minimumOrderAmount: moneyAmount('minimum_order_amount')
       .notNull()
       .default(0),
+    platformCommissionBps: integer('platform_commission_bps')
+      .notNull()
+      .default(1000),
     preparationMinMinutes: integer('preparation_min_minutes'),
     preparationMaxMinutes: integer('preparation_max_minutes'),
     imageUrl: text('image_url'),
@@ -559,6 +563,9 @@ export const orders = pgTable(
     currency: text('currency').notNull().default('NGN'),
     subtotalAmount: moneyAmount('subtotal_amount').notNull(),
     deliveryFeeAmount: moneyAmount('delivery_fee_amount').notNull().default(0),
+    serviceChargeAmount: moneyAmount('service_charge_amount')
+      .notNull()
+      .default(0),
     discountAmount: moneyAmount('discount_amount').notNull().default(0),
     totalAmount: moneyAmount('total_amount').notNull(),
     customerNote: text('customer_note'),
