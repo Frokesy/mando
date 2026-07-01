@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { FormEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
+import { FiMessageCircle } from "react-icons/fi";
 import {
   LocationIcon,
   NotificationIcon,
@@ -16,6 +17,8 @@ import useNotificationStore from "@/store/notificationStore";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
+const SUPPORT_WHATSAPP_URL =
+  "https://wa.me/2349164716562?text=%2B2349164716562";
 
 type SavedAddress = {
   id: string;
@@ -31,6 +34,8 @@ type ComboSummary = {
   name: string;
   priceAmount: number;
   imageUrl: string | null;
+  ratingAverage: number;
+  reviewCount: number;
   restaurant: {
     name: string;
   };
@@ -230,6 +235,7 @@ const Dashboard = () => {
                 title={combo.name}
                 price={formatNaira(combo.priceAmount)}
                 vendor={combo.restaurant.name}
+                rating={`${combo.ratingAverage || "New"}${combo.reviewCount ? ` (${combo.reviewCount})` : ""}`}
                 imgUrl={combo.imageUrl ?? "/dummy-img.jpg"}
                 href={`/customer/featured-combos/${combo.id}`}
               />
@@ -241,6 +247,17 @@ const Dashboard = () => {
           )}
         </div>
       </div>
+
+      <a
+        href={SUPPORT_WHATSAPP_URL}
+        target="_blank"
+        rel="noreferrer"
+        aria-label="Chat with customer support"
+        title="Customer support"
+        className="fixed bottom-24 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-[#25D366] text-white shadow-[0_14px_30px_rgba(37,211,102,0.35)]"
+      >
+        <FiMessageCircle className="h-7 w-7" />
+      </a>
 
       <BottomNav />
     </div>

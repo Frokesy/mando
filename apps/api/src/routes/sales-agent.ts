@@ -1,10 +1,12 @@
 import type { FastifyInstance, FastifyReply } from 'fastify'
+import { randomBytes } from 'node:crypto'
 import { and, desc, eq, inArray } from 'drizzle-orm'
 import { z } from 'zod'
 
 import { getCurrentSessionContext } from '../auth/current-session.js'
 import {
   createSessionToken,
+  hashPassword,
   serializeClearSessionCookie,
   serializeSessionCookie,
   verifyPassword,
@@ -17,12 +19,25 @@ import {
   notifications,
   orders,
   payoutAccounts,
+  payoutRequests,
   profiles,
   referrals,
   restaurants,
   salesAgentProfiles,
+  userRoles,
   users,
 } from '../db/schema.js'
+
+const signupBodySchema = z.object({
+  email: z.email().trim().toLowerCase(),
+  fullName: z.string().trim().min(1).max(120),
+  password: z
+    .string()
+    .min(6)
+    .regex(/[A-Z]/, 'Password must include at least one uppercase letter.')
+    .regex(/\d/, 'Password must include at least one number.'),
+  referralCode: z.string().trim().min(1),
+})
 
 const loginBodySchema = z.object({
   code: z.string().trim().min(1),
@@ -34,6 +49,113 @@ const notificationParamsSchema = z.object({
 })
 
 export async function salesAgentRoutes(app: FastifyInstance) {
+  app.post('/signup', async (request, reply) => {
+    const parsedBody = signupBodySchema.safeParse(request.body)
+
+    if (!parsedBody.success) {
+      return reply.status(400).send({
+        error: 'validation_error',
+        message: 'Please check the signup details and try again.',
+      })
+    }
+
+    const { email, fullName, password, referralCode } = parsedBody.data
+
+    try {
+      const [upline] = await database
+        .select({
+          userId: salesAgentProfiles.userId,
+          status: salesAgentProfiles.status,
+          tier: salesAgentProfiles.tier,
+        })
+        .from(salesAgentProfiles)
+        .where(eq(salesAgentProfiles.referralCode, referralCode))
+        .limit(1)
+
+      if (!upline || upline.status !== 'active' || upline.tier !== 'influencer') {
+        return reply.status(403).send({
+          error: 'invalid_sales_agent_referral',
+          message: 'A verified influencer referral link is required to apply as a sales agent.',
+        })
+      }
+
+      const result = await database.transaction(async (tx) => {
+        const [createdUser] = await tx
+          .insert(users)
+          .values({
+            email,
+            passwordHash: await hashPassword(password),
+          })
+          .returning({
+            id: users.id,
+            email: users.email,
+            status: users.status,
+            createdAt: users.createdAt,
+          })
+
+        await tx.insert(profiles).values({
+          userId: createdUser.id,
+          fullName,
+        })
+
+        await tx.insert(userRoles).values({
+          userId: createdUser.id,
+          role: 'sales_agent',
+        })
+
+        const agentCode = await generateUniqueAgentCode(tx)
+        const newReferralCode = await generateUniqueReferralCode(tx)
+
+        await tx.insert(salesAgentProfiles).values({
+          userId: createdUser.id,
+          agentCode,
+          referralCode: newReferralCode,
+          uplineSalesAgentId: upline.userId,
+          status: 'pending',
+          tier: 'standard',
+        })
+
+        await tx.insert(notifications).values({
+          userId: upline.userId,
+          type: 'sales_agent_downline_application',
+          title: 'New sales agent application',
+          body: `${fullName} applied through your influencer referral link. Admin approval is required.`,
+          data: {
+            applicantUserId: createdUser.id,
+            applicantEmail: createdUser.email,
+          },
+        })
+
+        return {
+          user: createdUser,
+          profile: { fullName },
+          salesAgent: {
+            agentCode,
+            referralCode: newReferralCode,
+            status: 'pending',
+            tier: 'standard',
+          },
+        }
+      })
+
+      return reply.status(201).send(result)
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        return reply.status(409).send({
+          error: 'email_already_exists',
+          message: 'An account with this email already exists.',
+        })
+      }
+
+      request.log.error(error)
+
+      return reply.status(500).send({
+        error: 'sales_agent_signup_failed',
+        message: 'Sales agent signup failed. Please try again.',
+      })
+    }
+  })
+
   app.post('/login', async (request, reply) => {
     const parsedBody = loginBodySchema.safeParse(request.body)
 
@@ -133,6 +255,10 @@ export async function salesAgentRoutes(app: FastifyInstance) {
       return reply.status(200).send({
         ...agent,
         payoutAccount: payoutAccount ?? null,
+        payout: {
+          availableAmount: await getAvailableAgentPayoutAmount(auth.userId),
+        },
+        payoutRequests: await getAgentPayoutRequests(auth.userId),
       })
     } catch (error) {
       request.log.error(error)
@@ -205,6 +331,54 @@ export async function salesAgentRoutes(app: FastifyInstance) {
         message: 'Unable to load sales agent referrals.',
       })
     }
+  })
+
+  app.post('/payout-requests', async (request, reply) => {
+    const auth = await requireSalesAgent(request.headers.cookie, reply)
+    if (!auth) return
+
+    const [payoutAccount] = await database
+      .select({ id: payoutAccounts.id })
+      .from(payoutAccounts)
+      .where(eq(payoutAccounts.userId, auth.userId))
+      .limit(1)
+
+    if (!payoutAccount) {
+      return reply.status(409).send({
+        error: 'missing_payout_account',
+        message: 'Admin needs to add your payout account before you can request payout.',
+      })
+    }
+
+    const amount = await getAvailableAgentPayoutAmount(auth.userId)
+
+    if (amount <= 0) {
+      return reply.status(409).send({
+        error: 'no_available_payout',
+        message: 'There are no available commissions to request.',
+      })
+    }
+
+    const [payoutRequest] = await database
+      .insert(payoutRequests)
+      .values({
+        requestedByUserId: auth.userId,
+        userId: auth.userId,
+        type: 'agent_commissions',
+        payoutAccountId: payoutAccount.id,
+        amount,
+      })
+      .returning()
+
+    await database.insert(notifications).values({
+      userId: auth.userId,
+      type: 'agent_payout_requested',
+      title: 'Payout request sent',
+      body: `Your ${formatMoney(amount)} commission payout request has been sent to admin.`,
+      data: { payoutRequestId: payoutRequest.id, amount },
+    })
+
+    return reply.status(201).send({ payoutRequest })
   })
 
   app.get('/combos', async (request, reply) => {
@@ -453,9 +627,7 @@ async function getShareableCombos(agentUserId: string) {
     priceAmount: combo.priceAmount,
     imageUrl: combo.imageUrl,
     restaurantName: combo.restaurantName,
-    shareUrl: buildWebUrl(
-      `/customer/dashboard?combo=${combo.slug}&sa=${agentUserId}`,
-    ),
+    shareUrl: buildWebUrl(`/customer/featured-combos/${combo.id}?sa=${agentUserId}`),
   }))
 }
 
@@ -520,6 +692,116 @@ function sendInvalidAgentLogin(reply: FastifyReply) {
     error: 'invalid_credentials',
     message: 'Invalid agent code or password.',
   })
+}
+
+type SalesAgentCodeStore = Pick<typeof database, 'select'>
+
+async function generateUniqueAgentCode(tx: SalesAgentCodeStore) {
+  return generateUniqueSalesAgentCode(tx, 'agent')
+}
+
+async function generateUniqueReferralCode(tx: SalesAgentCodeStore) {
+  return generateUniqueSalesAgentCode(tx, 'referral')
+}
+
+async function generateUniqueSalesAgentCode(
+  tx: SalesAgentCodeStore,
+  type: 'agent' | 'referral',
+) {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const code = `${type === 'agent' ? 'SA' : 'REF'}-${randomBytes(3)
+      .toString('hex')
+      .toUpperCase()}`
+    const [existing] = await tx
+      .select({ userId: salesAgentProfiles.userId })
+      .from(salesAgentProfiles)
+      .where(
+        type === 'agent'
+          ? eq(salesAgentProfiles.agentCode, code)
+          : eq(salesAgentProfiles.referralCode, code),
+      )
+      .limit(1)
+
+    if (!existing) return code
+  }
+
+  throw new Error('Unable to generate unique sales agent code.')
+}
+
+function isUniqueViolation(error: unknown) {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: string }).code === '23505'
+  )
+}
+
+async function getAvailableAgentPayoutAmount(userId: string) {
+  const commissionRows = await database
+    .select({ commissionAmount: commissions.commissionAmount })
+    .from(commissions)
+    .where(
+      and(
+        eq(commissions.salesAgentId, userId),
+        inArray(commissions.status, ['earned', 'approved']),
+      ),
+    )
+
+  const requestedRows = await database
+    .select({ amount: payoutRequests.amount })
+    .from(payoutRequests)
+    .where(
+      and(
+        eq(payoutRequests.userId, userId),
+        eq(payoutRequests.type, 'agent_commissions'),
+        inArray(payoutRequests.status, [
+          'pending',
+          'under_review',
+          'approved',
+          'processing',
+          'paid',
+        ]),
+      ),
+    )
+
+  const earnedAmount = commissionRows.reduce(
+    (total, commission) => total + commission.commissionAmount,
+    0,
+  )
+  const requestedAmount = requestedRows.reduce(
+    (total, request) => total + request.amount,
+    0,
+  )
+
+  return Math.max(earnedAmount - requestedAmount, 0)
+}
+
+function getAgentPayoutRequests(userId: string) {
+  return database
+    .select({
+      id: payoutRequests.id,
+      amount: payoutRequests.amount,
+      status: payoutRequests.status,
+      requestedAt: payoutRequests.requestedAt,
+    })
+    .from(payoutRequests)
+    .where(
+      and(
+        eq(payoutRequests.userId, userId),
+        eq(payoutRequests.type, 'agent_commissions'),
+      ),
+    )
+    .orderBy(desc(payoutRequests.requestedAt))
+    .limit(10)
+}
+
+function formatMoney(amount: number) {
+  return new Intl.NumberFormat('en-NG', {
+    style: 'currency',
+    currency: 'NGN',
+    maximumFractionDigits: 0,
+  }).format(amount)
 }
 
 function sendUnauthenticated(reply: FastifyReply) {

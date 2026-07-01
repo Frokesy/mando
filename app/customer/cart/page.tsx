@@ -185,6 +185,14 @@ const CartPage = () => {
     }
 
     setStartingPayment(true);
+    const checkoutWindow =
+      typeof window !== "undefined" ? window.open("about:blank", "mando_checkout") : null;
+
+    if (checkoutWindow) {
+      checkoutWindow.document.write(
+        "<!doctype html><title>Opening checkout...</title><body style=\"font-family: system-ui, sans-serif; display: grid; min-height: 100vh; place-items: center; color: #141B34;\"><p>Opening secure checkout...</p></body>",
+      );
+    }
 
     try {
       const orderResponse = await fetch(`${API_BASE_URL}/customer/orders`, {
@@ -238,8 +246,13 @@ const CartPage = () => {
       }
 
       showToast("Opening secure payment checkout", "success");
-      window.location.assign(checkoutData.payment.redirectUrl);
+      if (checkoutWindow && !checkoutWindow.closed) {
+        checkoutWindow.location.href = checkoutData.payment.redirectUrl;
+      } else {
+        window.location.href = checkoutData.payment.redirectUrl;
+      }
     } catch (error) {
+      if (checkoutWindow && !checkoutWindow.closed) checkoutWindow.close();
       showToast(
         error instanceof Error ? error.message : "Unable to start checkout",
         "error",

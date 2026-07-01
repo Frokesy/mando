@@ -21,7 +21,7 @@ type RestaurantOrder = {
   items: { id: string; name: string; quantity: number }[];
 };
 
-const FILTERS = ["All", "Awaiting decision", "Preparing", "Ready for pickup", "Completed"];
+const FILTERS = ["All", "Awaiting decision", "Preparing", "Ready for pickup", "Delivered"];
 
 function getStatusLabel(status: string) {
   if (status === "awaiting_restaurant") return "Awaiting decision";

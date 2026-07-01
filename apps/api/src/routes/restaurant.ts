@@ -24,6 +24,7 @@ import {
   restaurantMembers,
   restaurantOrderDecisions,
   restaurants,
+  riderProfiles,
   serviceAreas,
   userRoles,
   users,
@@ -346,6 +347,28 @@ export async function restaurantRoutes(app: FastifyInstance) {
         actorUserId: context.userId,
         note: 'Restaurant marked the order ready for pickup.',
       })
+
+      const availableRiders = await tx
+        .select({ userId: riderProfiles.userId })
+        .from(riderProfiles)
+        .where(
+          and(
+            eq(riderProfiles.serviceAreaId, context.restaurant.serviceArea.id),
+            eq(riderProfiles.availabilityStatus, 'available'),
+          ),
+        )
+
+      if (availableRiders.length > 0) {
+        await tx.insert(notifications).values(
+          availableRiders.map((rider) => ({
+            userId: rider.userId,
+            type: 'pickup_ready',
+            title: 'Pickup available',
+            body: `Order ${order.orderNumber} is ready for pickup at ${context.restaurant.name}.`,
+            data: { orderId: order.id, orderNumber: order.orderNumber },
+          })),
+        )
+      }
     })
 
     return reply.status(200).send({
@@ -437,6 +460,7 @@ async function requireRestaurant(cookieHeader: string | undefined, reply: Fastif
       imageUrl: restaurants.imageUrl,
       restaurantStatus: restaurants.status,
       isVerified: restaurants.isVerified,
+      serviceAreaId: serviceAreas.id,
       serviceAreaName: serviceAreas.name,
       serviceAreaCity: serviceAreas.city,
       serviceAreaState: serviceAreas.state,
@@ -474,6 +498,7 @@ async function requireRestaurant(cookieHeader: string | undefined, reply: Fastif
       isVerified: membership.isVerified,
       membershipRole: membership.role,
       serviceArea: {
+        id: membership.serviceAreaId,
         name: membership.serviceAreaName,
         city: membership.serviceAreaCity,
         state: membership.serviceAreaState,

@@ -8,6 +8,8 @@ import { useToastStore } from "@/store/toastStore";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
+const SUPPORT_WHATSAPP_URL =
+  "https://wa.me/2349164716562?text=%2B2349164716562";
 
 type ServiceArea = {
   id: string;
@@ -220,7 +222,16 @@ export default function AddressPage() {
               {addressPreview}
             </p>
           ) : null}
-          <div className="text-sm text-[#A4A4A4] flex justify-end mt-3">Can&apos;t find your location?</div>
+          <div className="mt-3 flex justify-end">
+            <a
+              href={SUPPORT_WHATSAPP_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="text-sm font-semibold text-[#DFB400]"
+            >
+              Can&apos;t find your location?
+            </a>
+          </div>
       </section>
 
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t p-4 flex gap-3">

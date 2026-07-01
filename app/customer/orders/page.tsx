@@ -18,6 +18,7 @@ type CustomerOrderSummary = {
   status: string;
   totalAmount: number;
   placedAt: string;
+  hasReview: boolean;
   restaurant: {
     name: string;
   };
@@ -99,6 +100,11 @@ export default function CustomerOrdersPage() {
       if (!response.ok) throw new Error(body?.message ?? "Unable to submit review");
 
       showToast("Review submitted successfully", "success");
+      setOrders((current) =>
+        current.map((order) =>
+          order.id === orderId ? { ...order, hasReview: true } : order,
+        ),
+      );
       setOpenReviewOrderId(null);
       setRating(0);
       setComment("");
@@ -167,17 +173,23 @@ export default function CustomerOrdersPage() {
                   >
                     View details
                   </Link>
-                  <button
-                    type="button"
-                    className="flex-1 rounded-2xl border border-[#141B34] py-3 text-sm font-semibold text-[#141B34]"
-                    onClick={() => {
-                      setOpenReviewOrderId((current) => (current === order.id ? null : order.id));
-                      setRating(0);
-                      setComment("");
-                    }}
-                  >
-                    Rate order
-                  </button>
+                  {order.hasReview ? (
+                    <div className="flex-1 rounded-2xl border border-[#DFB400] bg-[#FFF7E0] py-3 text-center text-sm font-semibold text-[#141B34]">
+                      Rated
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="flex-1 rounded-2xl border border-[#141B34] py-3 text-sm font-semibold text-[#141B34]"
+                      onClick={() => {
+                        setOpenReviewOrderId((current) => (current === order.id ? null : order.id));
+                        setRating(0);
+                        setComment("");
+                      }}
+                    >
+                      Rate order
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border border-[#E53E3E] py-3 text-sm font-semibold text-[#E53E3E]"
@@ -188,7 +200,7 @@ export default function CustomerOrdersPage() {
                   </button>
                 </div>
 
-                {openReviewOrderId === order.id ? (
+                {openReviewOrderId === order.id && !order.hasReview ? (
                   <div className="mt-4 rounded-2xl bg-[#F9F9F9] p-4">
                     <div className="mb-4 flex gap-2">
                       {[1, 2, 3, 4, 5].map((star) => (

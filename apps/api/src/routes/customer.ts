@@ -1068,6 +1068,15 @@ export async function customerRoutes(app: FastifyInstance) {
       })
     }
 
+    const existingReview = await selectOrderReview(order.id)
+
+    if (existingReview) {
+      return reply.status(409).send({
+        error: 'order_already_reviewed',
+        message: 'You have already rated this order.',
+      })
+    }
+
     const [review] = await database
       .insert(orderReviews)
       .values({
@@ -1076,14 +1085,6 @@ export async function customerRoutes(app: FastifyInstance) {
         restaurantId: order.restaurantId,
         rating: parsedBody.data.rating,
         comment: parsedBody.data.comment ?? null,
-      })
-      .onConflictDoUpdate({
-        target: orderReviews.orderId,
-        set: {
-          rating: parsedBody.data.rating,
-          comment: parsedBody.data.comment ?? null,
-          updatedAt: new Date(),
-        },
       })
       .returning({
         id: orderReviews.id,
@@ -1291,6 +1292,7 @@ function selectCustomerOrderSummaries(userId: string) {
       currency: orders.currency,
       placedAt: orders.placedAt,
       createdAt: orders.createdAt,
+      reviewId: orderReviews.id,
       restaurant: {
         id: restaurants.id,
         name: restaurants.name,
@@ -1300,6 +1302,7 @@ function selectCustomerOrderSummaries(userId: string) {
     })
     .from(orders)
     .innerJoin(restaurants, eq(orders.restaurantId, restaurants.id))
+    .leftJoin(orderReviews, eq(orderReviews.orderId, orders.id))
     .where(eq(orders.customerId, userId))
     .orderBy(desc(orders.createdAt))
 }
@@ -1318,6 +1321,7 @@ function serializeOrderSummary(order: CustomerOrderSummary) {
     placedAt: order.placedAt ?? order.createdAt,
     restaurant: order.restaurant,
     canCancel: isCustomerCancellableOrderStatus(order.status),
+    hasReview: Boolean(order.reviewId),
   }
 }
 
