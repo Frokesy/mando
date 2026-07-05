@@ -4,7 +4,7 @@ import { FaEye } from "react-icons/fa";
 
 const AdminLogin = () => {
   return (
-    <div className="flex justify-between items-center">
+    <div className="flex justify-between items-center px-8 py-10">
       <div className="w-[40%]">
         <img
           src="/admin-onboarding.png"

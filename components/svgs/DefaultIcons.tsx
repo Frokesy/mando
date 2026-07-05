@@ -92,31 +92,31 @@ export const LocationIcon = () => (
   </svg>
 );
 
-export const NotificationIcon = () => (
+export const NotificationIcon = ({ size = 24 }: { size?: number }) => (
   <svg
-    width="24"
-    height="24"
+    width={size}
+    height={size}
     viewBox="0 0 24 24"
     fill="none"
     xmlns="http://www.w3.org/2000/svg"
   >
     <path
       d="M19 18V9.5C19 5.63401 15.866 2.5 12 2.5C8.13401 2.5 5 5.63401 5 9.5V18"
-      stroke="#333333"
+      stroke="currentColor"
       strokeWidth="1.5"
       strokeLinecap="round"
       strokeLinejoin="round"
     />
     <path
       d="M20.5 18H3.5"
-      stroke="#333333"
+      stroke="currentColor"
       strokeWidth="1.5"
       strokeLinecap="round"
       strokeLinejoin="round"
     />
     <path
       d="M13.5 20C13.5 20.8284 12.8284 21.5 12 21.5M12 21.5C11.1716 21.5 10.5 20.8284 10.5 20M12 21.5V20"
-      stroke="#333333"
+      stroke="currentColor"
       strokeWidth="1.5"
       strokeLinejoin="round"
     />
@@ -193,14 +193,14 @@ export const ArrowLeftIcon = () => (
   >
     <path
       d="M7.5625 16.5027H26.125"
-      stroke="#333333"
+      stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
     />
     <path
       d="M15.1248 24.7527C15.1248 24.7527 6.87495 18.6766 6.87494 16.5026C6.87493 14.3286 15.125 8.25268 15.125 8.25268"
-      stroke="#333333"
+      stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -218,20 +218,20 @@ export const TimerIcon = () => (
   >
     <path
       d="M1.58337 11.875C1.6964 12.2134 1.82897 12.5425 1.9797 12.8608M3.26604 14.8408C3.51629 15.1317 3.785 15.4055 4.07029 15.6603M7.12504 17.4167C6.77056 17.3024 6.42601 17.1652 6.09303 17.0067"
-      stroke="#333333"
+      stroke="currentColor"
       strokeWidth="1.2"
       strokeLinecap="round"
       strokeLinejoin="round"
     />
     <path
       d="M9.5 10.6875C10.1558 10.6875 10.6875 10.1558 10.6875 9.5C10.6875 8.84418 10.1558 8.3125 9.5 8.3125C8.84418 8.3125 8.3125 8.84418 8.3125 9.5M9.5 10.6875C8.84418 10.6875 8.3125 10.1558 8.3125 9.5M9.5 10.6875V12.6667M8.3125 9.5H4.75"
-      stroke="#333333"
+      stroke="currentColor"
       strokeWidth="1.2"
       strokeLinecap="round"
     />
     <path
       d="M9.50004 17.4167C13.8723 17.4167 17.4167 13.8722 17.4167 9.50001C17.4167 5.12775 13.8723 1.58334 9.50004 1.58334C5.12778 1.58334 1.58337 5.12775 1.58337 9.50001"
-      stroke="#333333"
+      stroke="currentColor"
       strokeWidth="1.2"
       strokeLinecap="round"
     />
@@ -248,28 +248,28 @@ export const MoneyIcon = () => (
   >
     <path
       d="M11.479 8.31243C11.479 9.40549 10.5929 10.2916 9.4998 10.2916C8.40674 10.2916 7.52063 9.40549 7.52063 8.31243C7.52063 7.21939 8.40674 6.33328 9.4998 6.33328C10.5929 6.33328 11.479 7.21939 11.479 8.31243Z"
-      stroke="#333333"
+      stroke="currentColor"
       strokeWidth="1.2"
       strokeLinecap="round"
       strokeLinejoin="round"
     />
     <path
       d="M12.6667 2.77084C14.6296 2.77084 15.984 3.07501 16.7303 3.30626C17.1599 3.43942 17.4167 3.84663 17.4167 4.29642V12.0193C17.4167 12.9021 16.4445 13.5663 15.577 13.4025C14.8328 13.262 13.8627 13.1491 12.6667 13.1491C8.90558 13.1491 8.00347 14.5786 2.48967 13.3627C1.95756 13.2454 1.58337 12.7668 1.58337 12.2219V4.29176C1.58337 3.51921 2.31233 2.95582 3.07011 3.1062C8.07243 4.09884 9.04159 2.77084 12.6667 2.77084Z"
-      stroke="#333333"
+      stroke="currentColor"
       strokeWidth="1.2"
       strokeLinecap="round"
       strokeLinejoin="round"
     />
     <path
       d="M1.58337 5.93749C3.12818 5.93749 4.51636 4.67484 4.69384 3.36787M14.6463 3.16666C14.6463 4.78137 16.0436 6.30877 17.4167 6.30877M17.4167 10.6875C15.9133 10.6875 14.456 11.7247 14.3308 13.1403M4.75043 13.4552C4.75043 11.7064 3.33266 10.2886 1.58376 10.2886"
-      stroke="#333333"
+      stroke="currentColor"
       strokeWidth="1.2"
       strokeLinecap="round"
       strokeLinejoin="round"
     />
     <path
       d="M15.0417 15.6219C14.386 15.5139 13.5944 15.4375 12.6671 15.4375C9.26737 15.4375 8.20361 16.7515 3.95837 15.9938"
-      stroke="#333333"
+      stroke="currentColor"
       strokeWidth="1.2"
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -287,14 +287,14 @@ export const CopyIcon = () => (
   >
     <path
       d="M6.41675 10.0833V8.25001C6.41675 5.22517 6.41675 3.71274 7.35645 2.77305C8.29614 1.83334 9.8086 1.83334 12.8334 1.83334C15.8582 1.83334 17.3706 1.83334 18.3104 2.77305C19.2501 3.71274 19.2501 5.22517 19.2501 8.25001V10.0833C19.2501 13.1082 19.2501 14.6206 18.3104 15.5603C17.3706 16.5 15.8582 16.5 12.8334 16.5C9.8086 16.5 8.29614 16.5 7.35645 15.5603C6.41675 14.6206 6.41675 13.1082 6.41675 10.0833Z"
-      stroke="#333333"
+      stroke="currentColor"
       strokeWidth="1.5"
       strokeLinecap="round"
       strokeLinejoin="round"
     />
     <path
       d="M2.75 5.5V13.75C2.75 16.7748 2.75 18.2872 3.6897 19.227C4.6294 20.1667 6.14182 20.1667 9.16667 20.1667H15.5833"
-      stroke="#333333"
+      stroke="currentColor"
       strokeWidth="1.5"
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -427,3 +427,4 @@ export const DefaultUserIcon = () => (
     />
   </svg>
 );
+
