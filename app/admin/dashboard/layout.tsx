@@ -94,7 +94,7 @@ const AdminDashboardLayout = ({ children }: { children: React.ReactNode }) => {
   };
 
   return (
-    <div className="flex justify-between sticky top-0 h-[100vh] px-8 overflow-y-hidden">
+    <div className="flex justify-between sticky top-0 h-[100vh] pl-8 overflow-y-hidden">
       <aside className="w-[15%] items-start pr-4 py-10">
         <div className="space-y-6">
           <p className="text-[14px] font-semibold font-mono">mando</p>
@@ -118,7 +118,7 @@ const AdminDashboardLayout = ({ children }: { children: React.ReactNode }) => {
           </div>
         </div>
       </aside>
-      <main className="w-[80%] flex flex-col">
+      <main className="w-[85%] flex flex-col">
         {/* Top Nav */}
         <div className="flex justify-between items-center px-8 py-4 border-b border-[#E2E8F0]">
           <div className="flex items-center space-x-2 text-[#808080]">
@@ -149,7 +149,7 @@ const AdminDashboardLayout = ({ children }: { children: React.ReactNode }) => {
             </div>
           </div>
         </div>
-        <div className="p-8">{children}</div>
+        <div className="bg-gray-100 pt-8 pl-8 min-h-screen">{children}</div>
       </main>
     </div>
   );

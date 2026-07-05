@@ -518,3 +518,88 @@ export const RefreshIcon = () => (
     />
   </svg>
 );
+
+export const RiderIcon = () => (
+  <svg
+    width="14"
+    height="14"
+    viewBox="0 0 14 14"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    <g clipPath="url(#clip0_919_2119)">
+      <path
+        d="M10.7917 12.2501C11.9192 12.2501 12.8333 11.336 12.8333 10.2084C12.8333 9.08083 11.9192 8.16675 10.7917 8.16675C9.66409 8.16675 8.75 9.08083 8.75 10.2084C8.75 11.336 9.66409 12.2501 10.7917 12.2501Z"
+        stroke="#2B7FFF"
+        strokeWidth="1.16667"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M3.20841 12.2501C4.336 12.2501 5.25008 11.336 5.25008 10.2084C5.25008 9.08083 4.336 8.16675 3.20841 8.16675C2.08083 8.16675 1.16675 9.08083 1.16675 10.2084C1.16675 11.336 2.08083 12.2501 3.20841 12.2501Z"
+        stroke="#2B7FFF"
+        strokeWidth="1.16667"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M8.75008 3.49992C9.07225 3.49992 9.33341 3.23875 9.33341 2.91659C9.33341 2.59442 9.07225 2.33325 8.75008 2.33325C8.42792 2.33325 8.16675 2.59442 8.16675 2.91659C8.16675 3.23875 8.42792 3.49992 8.75008 3.49992Z"
+        stroke="#2B7FFF"
+        strokeWidth="1.16667"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M7 10.2084V8.16675L5.25 6.41675L7.58333 4.66675L8.75 6.41675H9.91667"
+        stroke="#2B7FFF"
+        strokeWidth="1.16667"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </g>
+    <defs>
+      <clipPath id="clip0_919_2119">
+        <rect width="14" height="14" fill="white" />
+      </clipPath>
+    </defs>
+  </svg>
+);
+
+export const CancelIcon = () => (
+  <svg
+    width="14"
+    height="14"
+    viewBox="0 0 14 14"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    <g clipPath="url(#clip0_919_2146)">
+      <path
+        d="M7.00008 12.8334C10.2217 12.8334 12.8334 10.2217 12.8334 7.00008C12.8334 3.77842 10.2217 1.16675 7.00008 1.16675C3.77842 1.16675 1.16675 3.77842 1.16675 7.00008C1.16675 10.2217 3.77842 12.8334 7.00008 12.8334Z"
+        stroke="#FF6467"
+        strokeWidth="1.16667"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M8.75 5.25L5.25 8.75"
+        stroke="#FF6467"
+        strokeWidth="1.16667"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M5.25 5.25L8.75 8.75"
+        stroke="#FF6467"
+        strokeWidth="1.16667"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </g>
+    <defs>
+      <clipPath id="clip0_919_2146">
+        <rect width="14" height="14" fill="white" />
+      </clipPath>
+    </defs>
+  </svg>
+);
