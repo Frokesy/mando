@@ -94,8 +94,8 @@ const AdminDashboardLayout = ({ children }: { children: React.ReactNode }) => {
   };
 
   return (
-    <div className="flex justify-between sticky top-0 h-[100vh] pl-8 overflow-y-hidden">
-      <aside className="w-[15%] items-start pr-4 py-10">
+    <div className="flex justify-between pl-8">
+      <aside className="w-[15%] items-start pr-4 py-10 sticky top-0 h-[100vh]">
         <div className="space-y-6">
           <p className="text-[14px] font-semibold font-mono">mando</p>
 
