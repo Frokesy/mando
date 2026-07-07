@@ -11,7 +11,7 @@ import { useToastStore } from "@/store/toastStore";
 import BottomNav from "@/components/BottomNav";
 
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
+  (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000").replace(/\/+$/, "");
 const DELIVERY_FEE_AMOUNT = 400;
 const SERVICE_CHARGE_AMOUNT = 50;
 

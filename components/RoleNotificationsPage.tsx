@@ -7,7 +7,7 @@ import useNotificationStore, { Notification } from "@/store/notificationStore";
 import { useToastStore } from "@/store/toastStore";
 
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
+  (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000").replace(/\/+$/, "");
 
 type Filter = "all" | "unread" | "read" | "today";
 

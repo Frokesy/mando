@@ -16,7 +16,7 @@ import {
 import useNotificationStore from "@/store/notificationStore";
 
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
+  (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000").replace(/\/+$/, "");
 const SUPPORT_WHATSAPP_URL =
   "https://wa.me/2349164716562?text=%2B2349164716562";
 

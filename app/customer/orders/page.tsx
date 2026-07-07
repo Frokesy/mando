@@ -8,7 +8,7 @@ import { ArrowLeftIcon, GreyedStarIcon, StarIcon } from "@/components/svgs/Defau
 import { useToastStore } from "@/store/toastStore";
 
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
+  (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000").replace(/\/+$/, "");
 const PAGE_SIZE = 5;
 const HIDDEN_ORDER_IDS_KEY = "mando_hidden_customer_orders";
 

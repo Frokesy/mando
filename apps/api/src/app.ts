@@ -2,6 +2,7 @@ import cors from '@fastify/cors'
 import Fastify from 'fastify'
 
 import { authRoutes } from './routes/auth.js'
+import { adminRoutes } from './routes/admin.js'
 import { catalogRoutes } from './routes/catalog.js'
 import { customerRoutes } from './routes/customer.js'
 import { riderRoutes } from './routes/rider.js'
@@ -43,6 +44,7 @@ export function buildApp(options: BuildAppOptions = {}) {
   })
 
   app.register(authRoutes, { prefix: '/auth' })
+  app.register(adminRoutes, { prefix: '/admin' })
   app.register(customerRoutes, { prefix: '/customer' })
   app.register(catalogRoutes, { prefix: '/customer' })
   app.register(routePayRoutes, { prefix: '/customer' })
