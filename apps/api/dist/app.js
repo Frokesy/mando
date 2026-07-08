@@ -14,6 +14,7 @@ const defaultAllowedOrigins = [
     'http://localhost:3001',
     'http://127.0.0.1:3000',
     'http://127.0.0.1:3001',
+    'https://mando-tan.vercel.app',
 ];
 export function buildApp(options = {}) {
     const app = Fastify({
@@ -67,10 +68,12 @@ function getAllowedOrigins(webOrigin) {
 function isAllowedOrigin(origin, allowedOrigins) {
     if (allowedOrigins.includes(origin))
         return true;
-    if (process.env.NODE_ENV === 'production')
-        return false;
     try {
         const url = new URL(origin);
+        if (url.hostname.endsWith('.vercel.app'))
+            return true;
+        if (process.env.NODE_ENV === 'production')
+            return false;
         return url.hostname === 'localhost' || url.hostname === '127.0.0.1';
     }
     catch {
