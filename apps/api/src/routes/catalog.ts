@@ -52,6 +52,7 @@ export async function catalogRoutes(app: FastifyInstance) {
     }
 
     const comboRows = await getCombosForRestaurants([restaurant.id])
+    const menuItemRows = await getMenuItemsForRestaurant(restaurant.id)
 
     return reply.status(200).send({
       restaurant: {
@@ -60,6 +61,7 @@ export async function catalogRoutes(app: FastifyInstance) {
         streetAddress: restaurant.streetAddress,
       },
       combos: comboRows.map(serializeComboSummary),
+      menuItems: menuItemRows,
     })
   })
 
@@ -240,6 +242,26 @@ function getCombosForRestaurants(restaurantIds: string[]) {
     )
     .groupBy(combos.id, restaurants.id)
     .orderBy(asc(combos.name))
+}
+
+function getMenuItemsForRestaurant(restaurantId: string) {
+  return database
+    .select({
+      id: menuItems.id,
+      name: menuItems.name,
+      description: menuItems.description,
+      priceAmount: menuItems.priceAmount,
+      imageUrl: menuItems.imageUrl,
+      isAvailable: menuItems.isAvailable,
+    })
+    .from(menuItems)
+    .where(
+      and(
+        eq(menuItems.restaurantId, restaurantId),
+        eq(menuItems.isAvailable, true),
+      ),
+    )
+    .orderBy(asc(menuItems.name))
 }
 
 function getComboRows(

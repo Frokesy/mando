@@ -4,6 +4,8 @@ export type RoutePayConfig = {
   apiBaseUrl: string
   authUrl: string
   environment: string
+  webhookUsername: string | null
+  webhookPassword: string | null
 }
 
 export function getRoutePayConfig(): RoutePayConfig {
@@ -29,5 +31,7 @@ export function getRoutePayConfig(): RoutePayConfig {
       process.env.ROUTEPAY_AUTH_URL ??
       'https://authdev.routepay.com/connect/token',
     environment: process.env.ROUTEPAY_ENV ?? 'sandbox',
+    webhookUsername: process.env.ROUTEPAY_WEBHOOK_USERNAME ?? null,
+    webhookPassword: process.env.ROUTEPAY_WEBHOOK_PASSWORD ?? null,
   }
 }

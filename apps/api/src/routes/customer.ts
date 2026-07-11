@@ -66,6 +66,34 @@ const updateAddressBodySchema = addressBodySchema.partial().refine(
   },
 )
 
+const createOrderLineItemSchema = z
+  .object({
+    comboId: z.uuid().optional(),
+    restaurantId: z.uuid().optional(),
+    comboName: z.string().trim().min(1).max(160).optional(),
+    quantity: z.number().int().min(1).max(20),
+    components: z
+      .array(
+        z.object({
+          menuItemId: z.uuid(),
+          quantity: z.number().int().min(0).max(50),
+        }),
+      )
+      .optional(),
+  })
+  .refine(
+    (item) =>
+      Boolean(item.comboId) ||
+      Boolean(
+        item.restaurantId &&
+          item.components &&
+          item.components.some((component) => component.quantity > 0),
+      ),
+    {
+      message: 'Each order item must be a combo or a custom restaurant combo.',
+    },
+  )
+
 const createOrderBodySchema = z.object({
   addressId: z.uuid().optional(),
   paymentMethod: z
@@ -73,23 +101,7 @@ const createOrderBodySchema = z.object({
     .default('card'),
   customerNote: z.string().trim().max(500).nullable().optional(),
   testBypassPayment: z.boolean().optional(),
-  items: z
-    .array(
-      z.object({
-        comboId: z.uuid(),
-        quantity: z.number().int().min(1).max(20),
-        components: z
-          .array(
-            z.object({
-              menuItemId: z.uuid(),
-              quantity: z.number().int().min(0).max(50),
-            }),
-          )
-          .optional(),
-      }),
-    )
-    .min(1)
-    .max(25),
+  items: z.array(createOrderLineItemSchema).min(1).max(25),
 })
 
 const orderParamsSchema = z.object({
@@ -587,10 +599,24 @@ export async function customerRoutes(app: FastifyInstance) {
       })
     }
 
-    const requestedComboIds = Array.from(
-      new Set(body.items.map((item) => item.comboId)),
+    const comboOrderItems = body.items.filter(
+      (item): item is typeof item & { comboId: string } => Boolean(item.comboId),
     )
-    const comboRows = await getAvailableCombos(requestedComboIds)
+    const customOrderItems = body.items.filter((item) => !item.comboId)
+    const requestedComboIds = Array.from(
+      new Set(comboOrderItems.map((item) => item.comboId)),
+    )
+    const requestedMenuItemIds = Array.from(
+      new Set(
+        customOrderItems.flatMap((item) =>
+          item.components?.map((component) => component.menuItemId) ?? [],
+        ),
+      ),
+    )
+    const [comboRows, menuItemRows] = await Promise.all([
+      requestedComboIds.length > 0 ? getAvailableCombos(requestedComboIds) : [],
+      requestedMenuItemIds.length > 0 ? getAvailableMenuItems(requestedMenuItemIds) : [],
+    ])
 
     if (comboRows.length !== requestedComboIds.length) {
       return reply.status(400).send({
@@ -599,7 +625,35 @@ export async function customerRoutes(app: FastifyInstance) {
       })
     }
 
-    const restaurantIds = new Set(comboRows.map((combo) => combo.restaurantId))
+    if (menuItemRows.length !== requestedMenuItemIds.length) {
+      return reply.status(400).send({
+        error: 'invalid_order_item',
+        message: 'One or more restaurant items are unavailable. Please refresh your cart.',
+      })
+    }
+
+    const menuItemById = new Map(menuItemRows.map((item) => [item.id, item]))
+    const invalidCustomItem = customOrderItems.some((item) => {
+      if (!item.restaurantId) return true
+
+      return item.components?.some((component) => {
+        if (component.quantity <= 0) return false
+
+        return menuItemById.get(component.menuItemId)?.restaurantId !== item.restaurantId
+      }) ?? true
+    })
+
+    if (invalidCustomItem) {
+      return reply.status(400).send({
+        error: 'invalid_order_item',
+        message: 'One or more custom combo items do not belong to the selected restaurant.',
+      })
+    }
+
+    const restaurantIds = new Set([
+      ...comboRows.map((combo) => combo.restaurantId),
+      ...menuItemRows.map((item) => item.restaurantId),
+    ])
 
     if (restaurantIds.size > 1) {
       return reply.status(400).send({
@@ -619,8 +673,12 @@ export async function customerRoutes(app: FastifyInstance) {
     const comboById = new Map(comboRows.map((combo) => [combo.id, combo]))
     const componentRows = await getComboComponents(requestedComboIds)
     const componentsByComboId = groupComponentsByComboId(componentRows)
+    const comboItemsForValidation = comboOrderItems.map((item) => ({
+      comboId: item.comboId,
+      components: item.components,
+    }))
     const componentOverrideError = validateComponentOverrides(
-      body.items,
+      comboItemsForValidation,
       componentsByComboId,
     )
 
@@ -629,6 +687,39 @@ export async function customerRoutes(app: FastifyInstance) {
     }
 
     const normalizedItems = body.items.map((item) => {
+      if (!item.comboId) {
+        const components = (item.components ?? [])
+          .map((component) => {
+            const menuItem = menuItemById.get(component.menuItemId)
+
+            if (!menuItem || component.quantity <= 0) return null
+
+            return {
+              menuItemId: menuItem.id,
+              name: menuItem.name,
+              priceAmount: menuItem.priceAmount,
+              quantity: component.quantity,
+              lineTotalAmount: menuItem.priceAmount * component.quantity * item.quantity,
+            }
+          })
+          .filter((component): component is NonNullable<typeof component> => Boolean(component))
+
+        const unitPriceAmount = components.reduce(
+          (total, component) =>
+            total + component.priceAmount * component.quantity,
+          0,
+        )
+
+        return {
+          combo: null,
+          itemName: item.comboName ?? 'Custom combo',
+          quantity: item.quantity,
+          unitPriceAmount,
+          lineTotalAmount: unitPriceAmount * item.quantity,
+          components,
+        }
+      }
+
       const combo = comboById.get(item.comboId)
 
       if (!combo) {
@@ -664,6 +755,7 @@ export async function customerRoutes(app: FastifyInstance) {
 
       return {
         combo,
+        itemName: combo.name,
         quantity: item.quantity,
         unitPriceAmount,
         lineTotalAmount: unitPriceAmount * item.quantity,
@@ -679,7 +771,10 @@ export async function customerRoutes(app: FastifyInstance) {
     const serviceChargeAmount = SERVICE_CHARGE_AMOUNT
     const discountAmount = 0
     const totalAmount = subtotalAmount + deliveryFeeAmount + serviceChargeAmount - discountAmount
-    const restaurantCommissionBps = comboRows[0]?.restaurantPlatformCommissionBps ?? 1000
+    const restaurantCommissionBps =
+      comboRows[0]?.restaurantPlatformCommissionBps ??
+      menuItemRows[0]?.restaurantPlatformCommissionBps ??
+      1000
     const restaurantPlatformFeeAmount = Math.round(
       (subtotalAmount * restaurantCommissionBps) / 10000,
     )
@@ -725,12 +820,27 @@ export async function customerRoutes(app: FastifyInstance) {
         })
 
       for (const item of normalizedItems) {
+        if (!item.combo) {
+          await tx.insert(orderItems).values(
+            item.components.map((component) => ({
+              orderId: order.id,
+              menuItemId: component.menuItemId,
+              itemName: component.name,
+              unitPriceAmount: component.priceAmount,
+              quantity: component.quantity * item.quantity,
+              lineTotalAmount: component.lineTotalAmount,
+            })),
+          )
+
+          continue
+        }
+
         const [orderItem] = await tx
           .insert(orderItems)
           .values({
             orderId: order.id,
             comboId: item.combo.id,
-            itemName: item.combo.name,
+            itemName: item.itemName,
             unitPriceAmount: item.unitPriceAmount,
             quantity: item.quantity,
             lineTotalAmount: item.lineTotalAmount,
@@ -1189,6 +1299,26 @@ function getAvailableCombos(comboIds: string[]) {
     )
 }
 
+function getAvailableMenuItems(menuItemIds: string[]) {
+  return database
+    .select({
+      id: menuItems.id,
+      name: menuItems.name,
+      restaurantId: menuItems.restaurantId,
+      priceAmount: menuItems.priceAmount,
+      restaurantPlatformCommissionBps: restaurants.platformCommissionBps,
+    })
+    .from(menuItems)
+    .innerJoin(restaurants, eq(menuItems.restaurantId, restaurants.id))
+    .where(
+      and(
+        inArray(menuItems.id, menuItemIds),
+        eq(menuItems.isAvailable, true),
+        eq(restaurants.status, 'active' as const),
+      ),
+    )
+}
+
 function getComboComponents(comboIds: string[]) {
   return database
     .select({
@@ -1239,7 +1369,10 @@ function groupComponentsByComboId(components: ComboComponent[]) {
 }
 
 function validateComponentOverrides(
-  items: z.infer<typeof createOrderBodySchema>['items'],
+  items: Array<{
+    comboId: string
+    components?: Array<{ menuItemId: string; quantity: number }>
+  }>,
   componentsByComboId: Map<string, ComboComponent[]>,
 ) {
   for (const item of items) {
