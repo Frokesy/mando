@@ -210,6 +210,25 @@ export const vendorDocumentStatusEnum = pgEnum('vendor_document_status', [
   'rejected',
 ])
 
+export const riderVehicleTypeEnum = pgEnum('rider_vehicle_type', [
+  'motorcycle',
+  'bicycle',
+  'car',
+])
+
+export const riderDocumentTypeEnum = pgEnum('rider_document_type', [
+  'government_id',
+  'vehicle_license',
+  'proof_of_address',
+])
+
+export const riderDocumentStatusEnum = pgEnum('rider_document_status', [
+  'pending',
+  'uploaded',
+  'verified',
+  'rejected',
+])
+
 export const users = pgTable(
   'users',
   {
@@ -351,6 +370,8 @@ export const riderProfiles = pgTable(
     serviceAreaId: uuid('service_area_id')
       .notNull()
       .references(() => serviceAreas.id),
+    homeAddress: text('home_address'),
+    lastSeenAt: timestampWithTimezone('last_seen_at'),
     availabilityStatus: riderAvailabilityStatusEnum('availability_status')
       .notNull()
       .default('offline'),
@@ -362,6 +383,67 @@ export const riderProfiles = pgTable(
     index('rider_profiles_service_area_id_index').on(table.serviceAreaId),
     index('rider_profiles_availability_status_index').on(
       table.availabilityStatus,
+    ),
+  ],
+)
+
+export const riderVehicles = pgTable(
+  'rider_vehicles',
+  {
+    riderId: uuid('rider_id')
+      .primaryKey()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    vehicleType: riderVehicleTypeEnum('vehicle_type').notNull(),
+    plateNumber: text('plate_number'),
+    color: text('color'),
+    model: text('model'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    index('rider_vehicles_vehicle_type_index').on(table.vehicleType),
+  ],
+)
+
+export const riderDocuments = pgTable(
+  'rider_documents',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    riderId: uuid('rider_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    type: riderDocumentTypeEnum('type').notNull(),
+    name: text('name').notNull(),
+    fileUrl: text('file_url'),
+    status: riderDocumentStatusEnum('status').notNull().default('pending'),
+    uploadedAt: timestampWithTimezone('uploaded_at'),
+    reviewedAt: timestampWithTimezone('reviewed_at'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex('rider_documents_rider_id_type_unique').on(
+      table.riderId,
+      table.type,
+    ),
+    index('rider_documents_rider_id_index').on(table.riderId),
+    index('rider_documents_status_index').on(table.status),
+  ],
+)
+
+export const riderDeliveryFeeSettings = pgTable(
+  'rider_delivery_fee_settings',
+  {
+    vehicleType: riderVehicleTypeEnum('vehicle_type').primaryKey(),
+    deliveryFeeAmount: moneyAmount('delivery_fee_amount').notNull(),
+    mandoCutPercent: integer('mando_cut_percent').notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    check(
+      'rider_delivery_fee_settings_cut_range_check',
+      sql`${table.mandoCutPercent} between 0 and 100`,
     ),
   ],
 )

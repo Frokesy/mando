@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply } from 'fastify'
-import { desc, eq, inArray, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, sql } from 'drizzle-orm'
 import { z } from 'zod'
 
 import {
@@ -29,7 +29,10 @@ import {
   restaurantMembers,
   restaurantOperations,
   restaurants,
+  riderDeliveryFeeSettings,
+  riderDocuments,
   riderProfiles,
+  riderVehicles,
   salesAgentProfiles,
   serviceAreas,
   userRoles,
@@ -49,6 +52,10 @@ const orderParamsSchema = z.object({
 
 const vendorParamsSchema = z.object({
   vendorId: z.uuid(),
+})
+
+const riderParamsSchema = z.object({
+  riderId: z.uuid(),
 })
 
 const menuItemBodySchema = z.object({
@@ -80,6 +87,30 @@ const vendorBodySchema = z.object({
   healthSafetyPermitUrl: z.url().nullable().optional(),
 })
 
+const riderBodySchema = z.object({
+  fullName: z.string().trim().min(2),
+  email: z.email().trim().toLowerCase(),
+  phone: z.string().trim().min(5),
+  address: z.string().trim().min(4),
+  vehicleType: z.enum(['Motorcycle', 'Bicycle', 'Car']),
+  plateNumber: z.string().trim().optional(),
+  vehicleColor: z.string().trim().optional(),
+  vehicleModel: z.string().trim().optional(),
+  serviceArea: z.string().trim().min(2),
+  governmentIdUrl: z.url().nullable().optional(),
+  vehicleLicenseUrl: z.url().nullable().optional(),
+  proofOfAddressUrl: z.url().nullable().optional(),
+  bankName: z.string().trim().min(2),
+  accountNumber: z.string().trim().min(4),
+  accountName: z.string().trim().min(2),
+})
+
+const riderVehicleFeeSettingSchema = z.object({
+  id: z.enum(['motorcycle', 'bicycle', 'car']),
+  deliveryFee: z.coerce.number().int().nonnegative(),
+  mandoCutPercent: z.coerce.number().int().min(0).max(100),
+})
+
 const commissionBodySchema = z.object({
   commissionRatePercent: z.coerce.number().min(0).max(100),
 })
@@ -90,6 +121,7 @@ const payoutSettingsBodySchema = z.object({
   minimumWithdrawal: z.coerce.number().int().nonnegative(),
   autoProcess: z.boolean(),
   autoDeductCommission: z.boolean().optional(),
+  vehicleFeeSettings: z.array(riderVehicleFeeSettingSchema).optional(),
 })
 
 const payoutRequestParamsSchema = z.object({
@@ -102,6 +134,14 @@ const payoutStatusBodySchema = z.object({
 
 const vendorStatusBodySchema = z.object({
   status: z.enum(['active', 'paused', 'archived']),
+})
+
+const riderStatusBodySchema = z.object({
+  status: z.enum(['active', 'suspended']),
+})
+
+const riderZoneBodySchema = z.object({
+  serviceArea: z.string().trim().min(2),
 })
 
 export async function adminRoutes(app: FastifyInstance) {
@@ -326,6 +366,226 @@ export async function adminRoutes(app: FastifyInstance) {
       stats: buildVendorStats(vendorRows),
       vendors: vendorRows,
     })
+  })
+
+  app.get('/riders', async (_request, reply) => {
+    const riderRows = await selectAdminRiders()
+
+    return reply.status(200).send({
+      stats: buildRiderStats(riderRows),
+      riders: riderRows,
+      serviceAreas: await selectAdminServiceAreas(),
+    })
+  })
+
+  app.get('/riders/commissions', async (_request, reply) => {
+    return reply.status(200).send(await selectAdminRiderCommissions())
+  })
+
+  app.patch('/riders/commissions/settings', async (request, reply) => {
+    const parsedBody = payoutSettingsBodySchema.safeParse(request.body)
+    if (!parsedBody.success) {
+      return reply.status(400).send({
+        error: 'validation_error',
+        message: 'Please provide valid rider payout settings.',
+      })
+    }
+
+    const [settings] = await database
+      .insert(adminPayoutSettings)
+      .values({
+        settingsKey: 'riders',
+        frequency: parsedBody.data.frequency,
+        payoutTime: parsedBody.data.payoutTime,
+        minimumWithdrawal: parsedBody.data.minimumWithdrawal,
+        autoProcess: parsedBody.data.autoProcess,
+        autoDeductCommission: parsedBody.data.autoDeductCommission ?? true,
+      })
+      .onConflictDoUpdate({
+        target: adminPayoutSettings.settingsKey,
+        set: {
+          frequency: parsedBody.data.frequency,
+          payoutTime: parsedBody.data.payoutTime,
+          minimumWithdrawal: parsedBody.data.minimumWithdrawal,
+          autoProcess: parsedBody.data.autoProcess,
+          autoDeductCommission: parsedBody.data.autoDeductCommission ?? true,
+          updatedAt: new Date(),
+        },
+      })
+      .returning({
+        frequency: adminPayoutSettings.frequency,
+        payoutTime: adminPayoutSettings.payoutTime,
+        minimumWithdrawal: adminPayoutSettings.minimumWithdrawal,
+        autoProcess: adminPayoutSettings.autoProcess,
+        autoDeductCommission: adminPayoutSettings.autoDeductCommission,
+      })
+
+    if (parsedBody.data.vehicleFeeSettings?.length) {
+      for (const setting of parsedBody.data.vehicleFeeSettings) {
+        await database
+          .insert(riderDeliveryFeeSettings)
+          .values({
+            vehicleType: setting.id,
+            deliveryFeeAmount: setting.deliveryFee,
+            mandoCutPercent: setting.mandoCutPercent,
+          })
+          .onConflictDoUpdate({
+            target: riderDeliveryFeeSettings.vehicleType,
+            set: {
+              deliveryFeeAmount: setting.deliveryFee,
+              mandoCutPercent: setting.mandoCutPercent,
+              updatedAt: new Date(),
+            },
+          })
+      }
+    }
+
+    return reply.status(200).send({ settings })
+  })
+
+  app.patch('/riders/withdrawals/:requestId/status', async (request, reply) => {
+    const parsedParams = payoutRequestParamsSchema.safeParse(request.params)
+    const parsedBody = payoutStatusBodySchema.safeParse(request.body)
+
+    if (!parsedParams.success || !parsedBody.success) {
+      return reply.status(400).send({
+        error: 'validation_error',
+        message: 'Please choose a valid rider withdrawal request and status.',
+      })
+    }
+
+    const [updatedRequest] = await database
+      .update(payoutRequests)
+      .set({
+        status: parsedBody.data.status,
+        reviewedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(payoutRequests.id, parsedParams.data.requestId),
+          eq(payoutRequests.type, 'rider_earnings'),
+        ),
+      )
+      .returning({ id: payoutRequests.id, status: payoutRequests.status })
+
+    if (!updatedRequest) {
+      return reply.status(404).send({
+        error: 'withdrawal_not_found',
+        message: 'Rider withdrawal request not found.',
+      })
+    }
+
+    return reply.status(200).send({ request: updatedRequest })
+  })
+
+  app.post('/riders', async (request, reply) => {
+    const parsedBody = riderBodySchema.safeParse(request.body)
+    if (!parsedBody.success) {
+      return reply.status(400).send({
+        error: 'validation_error',
+        message: 'Please complete the rider onboarding form.',
+      })
+    }
+
+    try {
+      const rider = await createAdminRider(parsedBody.data)
+      return reply.status(201).send({ rider })
+    } catch (error) {
+      request.log.error(error)
+
+      if (isUniqueViolation(error)) {
+        return reply.status(409).send({
+          error: 'rider_exists',
+          message: 'A rider with this email already exists.',
+        })
+      }
+
+      return reply.status(500).send({
+        error: 'rider_create_failed',
+        message: 'Unable to create rider. Please try again.',
+      })
+    }
+  })
+
+  app.patch('/riders/:riderId/status', async (request, reply) => {
+    const parsedParams = riderParamsSchema.safeParse(request.params)
+    const parsedBody = riderStatusBodySchema.safeParse(request.body)
+
+    if (!parsedParams.success || !parsedBody.success) {
+      return reply.status(400).send({
+        error: 'validation_error',
+        message: 'Please choose a valid rider and status.',
+      })
+    }
+
+    const [user] = await database
+      .update(users)
+      .set({
+        status: parsedBody.data.status === 'suspended' ? 'suspended' : 'active',
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, parsedParams.data.riderId))
+      .returning({ id: users.id })
+
+    if (!user) {
+      return reply.status(404).send({
+        error: 'rider_not_found',
+        message: 'Rider not found.',
+      })
+    }
+
+    const rider = await selectAdminRiderDetail(user.id)
+    return reply.status(200).send({ rider })
+  })
+
+  app.patch('/riders/:riderId/zone', async (request, reply) => {
+    const parsedParams = riderParamsSchema.safeParse(request.params)
+    const parsedBody = riderZoneBodySchema.safeParse(request.body)
+
+    if (!parsedParams.success || !parsedBody.success) {
+      return reply.status(400).send({
+        error: 'validation_error',
+        message: 'Please choose a valid rider zone.',
+      })
+    }
+
+    const serviceArea = await ensureServiceArea(parsedBody.data.serviceArea)
+    const [riderProfile] = await database
+      .update(riderProfiles)
+      .set({ serviceAreaId: serviceArea.id, updatedAt: new Date() })
+      .where(eq(riderProfiles.userId, parsedParams.data.riderId))
+      .returning({ userId: riderProfiles.userId })
+
+    if (!riderProfile) {
+      return reply.status(404).send({
+        error: 'rider_not_found',
+        message: 'Rider not found.',
+      })
+    }
+
+    const rider = await selectAdminRiderDetail(riderProfile.userId)
+    return reply.status(200).send({ rider })
+  })
+
+  app.get('/riders/:riderId', async (request, reply) => {
+    const parsedParams = riderParamsSchema.safeParse(request.params)
+    if (!parsedParams.success) {
+      return reply.status(400).send({
+        error: 'validation_error',
+        message: 'Please choose a valid rider.',
+      })
+    }
+
+    const rider = await selectAdminRiderDetail(parsedParams.data.riderId)
+    if (!rider) {
+      return reply.status(404).send({
+        error: 'rider_not_found',
+        message: 'Rider not found.',
+      })
+    }
+
+    return reply.status(200).send({ rider })
   })
 
   app.get('/vendors/commissions', async (_request, reply) => {
@@ -1136,7 +1396,338 @@ async function upsertVendorDocuments(
   }
 }
 
-async function selectAdminPayoutSettings() {
+async function selectAdminRiders() {
+  const riderRows = await database
+    .select({
+      id: users.id,
+      email: users.email,
+      status: users.status,
+      createdAt: users.createdAt,
+      fullName: profiles.fullName,
+      phone: profiles.phone,
+      availabilityStatus: riderProfiles.availabilityStatus,
+      riderCode: riderProfiles.riderCode,
+      homeAddress: riderProfiles.homeAddress,
+      lastSeenAt: riderProfiles.lastSeenAt,
+      serviceAreaId: serviceAreas.id,
+      serviceAreaName: serviceAreas.name,
+      serviceAreaCity: serviceAreas.city,
+      serviceAreaState: serviceAreas.state,
+      vehicleType: riderVehicles.vehicleType,
+      plateNumber: riderVehicles.plateNumber,
+      vehicleColor: riderVehicles.color,
+      vehicleModel: riderVehicles.model,
+    })
+    .from(riderProfiles)
+    .innerJoin(users, eq(riderProfiles.userId, users.id))
+    .innerJoin(profiles, eq(riderProfiles.userId, profiles.userId))
+    .innerJoin(serviceAreas, eq(riderProfiles.serviceAreaId, serviceAreas.id))
+    .leftJoin(riderVehicles, eq(riderProfiles.userId, riderVehicles.riderId))
+    .orderBy(desc(users.createdAt))
+
+  const riderIds = riderRows.map((rider) => rider.id)
+  const deliveryRows = riderIds.length
+    ? await database.select().from(deliveries).where(inArray(deliveries.riderId, riderIds))
+    : []
+  const requestRows = riderIds.length
+    ? await database.select().from(payoutRequests).where(inArray(payoutRequests.userId, riderIds))
+    : []
+  const documentRows = riderIds.length
+    ? await database.select().from(riderDocuments).where(inArray(riderDocuments.riderId, riderIds))
+    : []
+
+  const deliveriesByRiderId = groupBy(deliveryRows, (delivery) => delivery.riderId ?? 'unassigned')
+  const requestsByRiderId = groupBy(requestRows, (request) => request.userId ?? 'unknown')
+  const documentsByRiderId = groupBy(documentRows, (document) => document.riderId)
+
+  return riderRows.map((rider) => {
+    const riderDeliveries = deliveriesByRiderId.get(rider.id) ?? []
+    const completedDeliveries = riderDeliveries.filter((delivery) => delivery.status === 'delivered')
+    const activeDeliveries = riderDeliveries.filter((delivery) =>
+      ['assigned', 'accepted', 'picked_up', 'on_the_way'].includes(delivery.status),
+    )
+    const riderRequests = requestsByRiderId.get(rider.id) ?? []
+    const totalEarnings = completedDeliveries.reduce(
+      (total, delivery) => total + delivery.riderEarningAmount,
+      0,
+    )
+
+    return {
+      id: rider.id,
+      name: rider.fullName,
+      initials: initialsFromName(rider.fullName),
+      email: rider.email,
+      phone: rider.phone ?? 'No phone',
+      address: rider.homeAddress ?? `${rider.serviceAreaName}, ${rider.serviceAreaCity}`,
+      status: mapRiderStatus(rider.status, rider.availabilityStatus),
+      availability: mapRiderAvailability(rider.availabilityStatus),
+      location: rider.serviceAreaName,
+      vehicleType: formatVehicleType(rider.vehicleType ?? 'motorcycle'),
+      plateNumber: rider.plateNumber ?? 'Not recorded',
+      vehicleColor: rider.vehicleColor ?? null,
+      vehicleModel: rider.vehicleModel ?? null,
+      lastSeen: formatRiderLastSeen(rider.lastSeenAt, rider.availabilityStatus),
+      orders: riderDeliveries.length,
+      rating: completedDeliveries.length ? 4.8 : 0,
+      joined: rider.createdAt,
+      totalDeliveries: completedDeliveries.length,
+      totalEarnings,
+      completionRate: riderDeliveries.length
+        ? Math.round((completedDeliveries.length / riderDeliveries.length) * 100)
+        : 0,
+      activeDeliveryCount: activeDeliveries.length,
+      payoutRequestCount: riderRequests.length,
+      riderCode: rider.riderCode,
+      documents: buildRiderDocuments(rider.id, documentsByRiderId.get(rider.id) ?? []),
+    }
+  })
+}
+
+async function selectAdminRiderDetail(riderId: string) {
+  const riderRows = await selectAdminRiders()
+  return riderRows.find((rider) => rider.id === riderId) ?? null
+}
+
+async function selectAdminServiceAreas() {
+  return database
+    .select({
+      id: serviceAreas.id,
+      name: serviceAreas.name,
+      city: serviceAreas.city,
+      state: serviceAreas.state,
+    })
+    .from(serviceAreas)
+    .where(eq(serviceAreas.isActive, true))
+    .orderBy(serviceAreas.name)
+}
+
+async function selectAdminRiderCommissions() {
+  const [requestRows, payoutSettings, vehicleFeeRows] = await Promise.all([
+    database
+      .select({
+        id: payoutRequests.id,
+        userId: payoutRequests.userId,
+        payoutAccountId: payoutRequests.payoutAccountId,
+        amount: payoutRequests.amount,
+        status: payoutRequests.status,
+        requestedAt: payoutRequests.requestedAt,
+      })
+      .from(payoutRequests)
+      .where(eq(payoutRequests.type, 'rider_earnings'))
+      .orderBy(desc(payoutRequests.requestedAt)),
+    selectAdminPayoutSettings('riders'),
+    selectRiderDeliveryFeeSettings(),
+  ])
+  const riderIds = requestRows
+    .map((request) => request.userId)
+    .filter((id): id is string => Boolean(id))
+  const accountIds = requestRows.map((request) => request.payoutAccountId)
+  const [riderRows, accountRows, deliveryRows] = await Promise.all([
+    riderIds.length
+      ? database.select().from(profiles).where(inArray(profiles.userId, riderIds))
+      : [],
+    accountIds.length
+      ? database.select().from(payoutAccounts).where(inArray(payoutAccounts.id, accountIds))
+      : [],
+    riderIds.length
+      ? database.select().from(deliveries).where(inArray(deliveries.riderId, riderIds))
+      : [],
+  ])
+  const riderById = new Map(riderRows.map((rider) => [rider.userId, rider]))
+  const accountById = new Map(accountRows.map((account) => [account.id, account]))
+  const deliveriesByRiderId = groupBy(deliveryRows, (delivery) => delivery.riderId ?? 'unassigned')
+
+  return {
+    vehicleFeeSettings: vehicleFeeRows,
+    payoutSettings,
+    withdrawalRequests: requestRows.map((request) => {
+      const rider = request.userId ? riderById.get(request.userId) : null
+      const riderDeliveries = request.userId
+        ? deliveriesByRiderId.get(request.userId) ?? []
+        : []
+      const deliveryFees = riderDeliveries.reduce(
+        (total, delivery) => total + delivery.deliveryFeeAmount,
+        0,
+      )
+      const riderAmount = riderDeliveries.reduce(
+        (total, delivery) => total + delivery.riderEarningAmount,
+        0,
+      )
+      const account = accountById.get(request.payoutAccountId)
+
+      return {
+        id: request.id,
+        rider: rider?.fullName ?? 'Rider',
+        deliveries: riderDeliveries.length,
+        deliveryFees,
+        mandoCut: Math.max(deliveryFees - riderAmount, 0),
+        riderAmount: request.amount,
+        paymentMethod: account
+          ? `${account.bankCode} • ${account.accountNumberLast4}`
+          : 'Bank transfer',
+        payoutDetails: account
+          ? `${account.accountName} • ****${account.accountNumberLast4}`
+          : 'No payout account details',
+        requestDate: request.requestedAt,
+        status: request.status,
+      }
+    }),
+  }
+}
+
+async function createAdminRider(input: z.infer<typeof riderBodySchema>) {
+  const [existingUser] = await database
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.email, input.email))
+    .limit(1)
+
+  if (existingUser) {
+    const error = new Error('Rider email already exists')
+    ;(error as { code?: string }).code = '23505'
+    throw error
+  }
+
+  const serviceArea = await ensureServiceArea(input.serviceArea)
+  const passwordHash = await hashPassword(createTemporaryPassword())
+  const riderCode = await createUniqueRiderCode(input.fullName)
+  const accountNumberLast4 = input.accountNumber.slice(-4)
+
+  const [user] = await database
+    .insert(users)
+    .values({
+      email: input.email,
+      passwordHash,
+      status: 'active',
+      emailVerifiedAt: new Date(),
+    })
+    .returning({ id: users.id })
+
+  await database.insert(profiles).values({
+    userId: user.id,
+    fullName: input.fullName,
+    phone: input.phone,
+  })
+
+  await database.insert(userRoles).values({
+    userId: user.id,
+    role: 'rider',
+  })
+
+  await database.insert(riderProfiles).values({
+    userId: user.id,
+    riderCode,
+    serviceAreaId: serviceArea.id,
+    homeAddress: input.address,
+    availabilityStatus: 'offline',
+  })
+
+  await database.insert(riderVehicles).values({
+    riderId: user.id,
+    vehicleType: parseVehicleType(input.vehicleType),
+    plateNumber: input.plateNumber || null,
+    color: input.vehicleColor || null,
+    model: input.vehicleModel || null,
+  })
+
+  await upsertRiderDocuments(user.id, input)
+
+  await database.insert(payoutAccounts).values({
+    userId: user.id,
+    bankCode: input.bankName,
+    accountName: input.accountName,
+    accountNumberEncrypted: `admin-collected-${accountNumberLast4}`,
+    accountNumberLast4,
+    isVerified: true,
+  })
+
+  return selectAdminRiderDetail(user.id)
+}
+
+async function createUniqueRiderCode(name: string) {
+  const prefix = initialsFromName(name) || 'RD'
+  const baseCode = `${prefix}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`
+  const [existingRider] = await database
+    .select({ userId: riderProfiles.userId })
+    .from(riderProfiles)
+    .where(eq(riderProfiles.riderCode, baseCode))
+    .limit(1)
+
+  if (!existingRider) return baseCode
+  return `${prefix}-${Date.now().toString(36).slice(-5).toUpperCase()}`
+}
+
+async function upsertRiderDocuments(
+  riderId: string,
+  input: z.infer<typeof riderBodySchema>,
+) {
+  const documents = [
+    {
+      riderId,
+      type: 'government_id' as const,
+      name: 'Government ID',
+      fileUrl: input.governmentIdUrl || null,
+      status: input.governmentIdUrl ? 'uploaded' as const : 'pending' as const,
+      uploadedAt: input.governmentIdUrl ? new Date() : null,
+    },
+    {
+      riderId,
+      type: 'vehicle_license' as const,
+      name: 'Vehicle license',
+      fileUrl: input.vehicleLicenseUrl || null,
+      status: input.vehicleLicenseUrl ? 'uploaded' as const : 'pending' as const,
+      uploadedAt: input.vehicleLicenseUrl ? new Date() : null,
+    },
+    {
+      riderId,
+      type: 'proof_of_address' as const,
+      name: 'Proof of address',
+      fileUrl: input.proofOfAddressUrl || null,
+      status: input.proofOfAddressUrl ? 'uploaded' as const : 'pending' as const,
+      uploadedAt: input.proofOfAddressUrl ? new Date() : null,
+    },
+  ]
+
+  for (const document of documents) {
+    await database
+      .insert(riderDocuments)
+      .values(document)
+      .onConflictDoUpdate({
+        target: [riderDocuments.riderId, riderDocuments.type],
+        set: {
+          name: document.name,
+          fileUrl: sql`coalesce(${document.fileUrl ?? null}, ${riderDocuments.fileUrl})`,
+          status: sql`case when ${riderDocuments.status} = 'pending' and ${document.status} = 'uploaded' then 'uploaded'::rider_document_status else ${riderDocuments.status} end`,
+          uploadedAt: sql`coalesce(${document.uploadedAt ?? null}, ${riderDocuments.uploadedAt})`,
+          updatedAt: new Date(),
+        },
+      })
+  }
+}
+
+async function selectRiderDeliveryFeeSettings() {
+  const rows = await database
+    .select()
+    .from(riderDeliveryFeeSettings)
+    .orderBy(riderDeliveryFeeSettings.vehicleType)
+
+  if (rows.length) {
+    return rows.map((row) => ({
+      id: row.vehicleType,
+      vehicleType: formatVehicleType(row.vehicleType),
+      deliveryFee: row.deliveryFeeAmount,
+      mandoCutPercent: row.mandoCutPercent,
+    }))
+  }
+
+  return [
+    { id: 'motorcycle', vehicleType: 'Motorcycle', deliveryFee: 400, mandoCutPercent: 20 },
+    { id: 'bicycle', vehicleType: 'Bicycle', deliveryFee: 300, mandoCutPercent: 15 },
+    { id: 'car', vehicleType: 'Car', deliveryFee: 700, mandoCutPercent: 25 },
+  ]
+}
+
+async function selectAdminPayoutSettings(settingsKey = 'default') {
   const [settings] = await database
     .select({
       frequency: adminPayoutSettings.frequency,
@@ -1146,7 +1737,7 @@ async function selectAdminPayoutSettings() {
       autoDeductCommission: adminPayoutSettings.autoDeductCommission,
     })
     .from(adminPayoutSettings)
-    .where(eq(adminPayoutSettings.settingsKey, 'default'))
+    .where(eq(adminPayoutSettings.settingsKey, settingsKey))
     .limit(1)
 
   return (
@@ -1230,6 +1821,16 @@ function buildVendorStats(vendorRows: Awaited<ReturnType<typeof selectAdminVendo
   }
 }
 
+function buildRiderStats(riderRows: Awaited<ReturnType<typeof selectAdminRiders>>) {
+  return {
+    total: riderRows.length,
+    active: riderRows.filter((rider) => rider.status === 'active').length,
+    onDelivery: riderRows.filter((rider) => rider.status === 'on delivery').length,
+    offline: riderRows.filter((rider) => rider.status === 'offline').length,
+    suspended: riderRows.filter((rider) => rider.status === 'suspended').length,
+  }
+}
+
 function buildVendorDocuments(vendor: Awaited<ReturnType<typeof selectAdminVendors>>[number]) {
   return [
     {
@@ -1266,6 +1867,71 @@ function mapVendorStatus(status: (typeof restaurants.$inferSelect)['status']) {
   if (status === 'paused') return 'suspended'
   if (status === 'archived') return 'inactive'
   return 'pending approval'
+}
+
+function mapRiderStatus(
+  userStatus: (typeof users.$inferSelect)['status'],
+  availabilityStatus: (typeof riderProfiles.$inferSelect)['availabilityStatus'],
+) {
+  if (userStatus === 'suspended' || userStatus === 'disabled') return 'suspended'
+  if (availabilityStatus === 'busy') return 'on delivery'
+  if (availabilityStatus === 'available') return 'active'
+  return 'offline'
+}
+
+function mapRiderAvailability(
+  availabilityStatus: (typeof riderProfiles.$inferSelect)['availabilityStatus'],
+) {
+  if (availabilityStatus === 'available') return 'Online'
+  if (availabilityStatus === 'busy') return 'Busy'
+  return 'Offline'
+}
+
+function parseVehicleType(vehicleType: 'Motorcycle' | 'Bicycle' | 'Car') {
+  if (vehicleType === 'Bicycle') return 'bicycle'
+  if (vehicleType === 'Car') return 'car'
+  return 'motorcycle'
+}
+
+function formatVehicleType(vehicleType: 'motorcycle' | 'bicycle' | 'car') {
+  if (vehicleType === 'bicycle') return 'Bicycle'
+  if (vehicleType === 'car') return 'Car'
+  return 'Motorcycle'
+}
+
+function formatRiderLastSeen(
+  lastSeenAt: Date | null,
+  availabilityStatus: (typeof riderProfiles.$inferSelect)['availabilityStatus'],
+) {
+  if (availabilityStatus !== 'offline') return 'Now'
+  if (!lastSeenAt) return 'Offline'
+  return lastSeenAt.toISOString()
+}
+
+function buildRiderDocuments(
+  riderId: string,
+  documents: (typeof riderDocuments.$inferSelect)[],
+) {
+  const documentByType = new Map(documents.map((document) => [document.type, document]))
+  const requiredDocuments = [
+    { type: 'government_id' as const, name: 'Government ID' },
+    { type: 'vehicle_license' as const, name: 'Vehicle license' },
+    { type: 'proof_of_address' as const, name: 'Proof of address' },
+  ]
+
+  return requiredDocuments.map((document) => {
+    const savedDocument = documentByType.get(document.type)
+
+    return {
+      id: savedDocument?.id ?? `${riderId}-${document.type}`,
+      type: document.type,
+      name: savedDocument?.name ?? document.name,
+      fileUrl: savedDocument?.fileUrl ?? null,
+      status: savedDocument?.status ?? 'pending',
+      uploadedAt: savedDocument?.uploadedAt ?? null,
+      reviewedAt: savedDocument?.reviewedAt ?? null,
+    }
+  })
 }
 
 function formatRestaurantLocation(

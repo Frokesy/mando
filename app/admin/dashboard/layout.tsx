@@ -11,6 +11,7 @@ import {
   OverviewIcon,
   PromoIcon,
   RefreshIcon,
+  RiderIcon,
   RolesIcon,
   SalesAgentIcon,
   SupportIcon,
@@ -46,7 +47,8 @@ const AdminDashboardLayout = ({ children }: { children: React.ReactNode }) => {
       icon: <SalesAgentIcon />,
       slug: "sales",
     },
-    { id: 8, item: "Operations", icon: <OperationsIcon />, slug: "operations" },
+    { id: 8, item: "Riders", icon: <RiderIcon />, slug: "riders" },
+    { id: 9, item: "Operations", icon: <OperationsIcon />, slug: "operations" },
   ];
 
   const settingsItems = [
