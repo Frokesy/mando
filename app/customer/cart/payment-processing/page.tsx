@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import useCartStore from "@/store/cartStore";
 import { useToastStore } from "@/store/toastStore";
 
@@ -157,20 +156,6 @@ export default function PaymentProcessingPage() {
           <div className="h-full w-[80%] bg-[#DFB400] animate-pulse" />
         </div>
         <p className="mt-4 text-xs font-semibold text-[#141B34]">{pollingStatus}</p>
-        <div className="mt-6 grid gap-3 sm:grid-cols-2">
-          <Link
-            href="/customer/orders"
-            className="rounded-2xl bg-[#141B34] px-4 py-3 text-sm font-semibold text-white"
-          >
-            View order
-          </Link>
-          <Link
-            href="/customer/cart"
-            className="rounded-2xl border border-[#141B34] px-4 py-3 text-sm font-semibold text-[#141B34]"
-          >
-            Back to cart
-          </Link>
-        </div>
       </div>
     </div>
   );

@@ -10,6 +10,7 @@ const uploadFolders = {
   restaurant_cover: 'mando/restaurants/cover',
   menu_item_image: 'mando/restaurants/menu-items',
   combo_image: 'mando/combos',
+  promo_banner: 'mando/promos/banners',
   vendor_document: 'mando/vendors/documents',
 } as const
 

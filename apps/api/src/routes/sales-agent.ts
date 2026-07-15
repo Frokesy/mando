@@ -744,7 +744,7 @@ async function getAvailableAgentPayoutAmount(userId: string) {
     .where(
       and(
         eq(commissions.salesAgentId, userId),
-        inArray(commissions.status, ['earned', 'approved']),
+        inArray(commissions.status, ['pending', 'earned', 'approved']),
       ),
     )
 

@@ -1079,6 +1079,20 @@ export const adminPayoutSettings = pgTable(
   ],
 )
 
+export const adminSettings = pgTable(
+  'admin_settings',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    settingsKey: text('settings_key').notNull(),
+    value: jsonb('value').notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex('admin_settings_key_unique').on(table.settingsKey),
+  ],
+)
+
 export const payouts = pgTable(
   'payouts',
   {

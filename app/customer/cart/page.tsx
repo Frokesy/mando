@@ -12,10 +12,14 @@ import BottomNav from "@/components/BottomNav";
 
 const API_BASE_URL =
   (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000").replace(/\/+$/, "");
-const DELIVERY_FEE_AMOUNT = 400;
-const SERVICE_CHARGE_AMOUNT = 50;
+const DEFAULT_DELIVERY_FEE_AMOUNT = 400;
+const DEFAULT_SERVICE_CHARGE_AMOUNT = 50;
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const checkoutPromoCodes = [
+  { code: "MANDO10", discountPercent: 10 },
+  { code: "LUNCH15", discountPercent: 15 },
+];
 
 type SavedAddress = {
   id: string;
@@ -81,12 +85,20 @@ const CartPage = () => {
   const updateCustomerProfile = useAuthStore((s) => s.updateCustomerProfile);
   const items = useCartStore((s) => s.items);
   const total = useCartStore((s) => s.total)();
-  const orderTotal = total + DELIVERY_FEE_AMOUNT + SERVICE_CHARGE_AMOUNT;
+  const [deliveryFeeAmount, setDeliveryFeeAmount] = useState(DEFAULT_DELIVERY_FEE_AMOUNT);
+  const [serviceChargeAmount, setServiceChargeAmount] = useState(DEFAULT_SERVICE_CHARGE_AMOUNT);
+  const [promoCodeInput, setPromoCodeInput] = useState("");
+  const [appliedPromo, setAppliedPromo] = useState<{ code: string; discountPercent: number } | null>(null);
+  const hasPromoCombo = items.some((item) => item.isPromoCombo);
+  const discountAmount = appliedPromo ? Math.round((total * appliedPromo.discountPercent) / 100) : 0;
+  const orderTotal = total + deliveryFeeAmount + serviceChargeAmount - discountAmount;
   const deliveryAddress = useCartStore((s) => s.deliveryAddress);
   const phoneNumber = useCartStore((s) => s.phoneNumber);
   const setDeliveryAddress = useCartStore((s) => s.setDeliveryAddress);
   const setPhoneNumber = useCartStore((s) => s.setPhoneNumber);
   const setCheckoutOrder = useCartStore((s) => s.setCheckoutOrder);
+  const removeItem = useCartStore((s) => s.removeItem);
+  const updateQuantity = useCartStore((s) => s.updateQuantity);
   const clearCart = useCartStore((s) => s.clear);
   const showToast = useToastStore((s) => s.showToast);
   const [showPhoneModal, setShowPhoneModal] = useState(false);
@@ -103,9 +115,12 @@ const CartPage = () => {
       setCheckingCheckoutDetails(true);
 
       try {
-        const [currentAuth, addressesResponse] = await Promise.all([
+        const [currentAuth, addressesResponse, checkoutSettingsResponse] = await Promise.all([
           fetchCurrentUser("customer"),
           fetch(`${API_BASE_URL}/customer/addresses`, {
+            credentials: "include",
+          }),
+          fetch(`${API_BASE_URL}/customer/checkout-settings`, {
             credentials: "include",
           }),
         ]);
@@ -129,6 +144,14 @@ const CartPage = () => {
             setDeliveryAddress("Add delivery address");
             setHasDeliveryAddress(false);
           }
+        }
+
+        if (checkoutSettingsResponse.ok) {
+          const settingsBody = (await checkoutSettingsResponse.json().catch(() => null)) as
+            | { checkoutSettings?: { deliveryFeeAmount?: number; serviceChargeAmount?: number } }
+            | null;
+          setDeliveryFeeAmount(settingsBody?.checkoutSettings?.deliveryFeeAmount ?? DEFAULT_DELIVERY_FEE_AMOUNT);
+          setServiceChargeAmount(settingsBody?.checkoutSettings?.serviceChargeAmount ?? DEFAULT_SERVICE_CHARGE_AMOUNT);
         }
       } finally {
         if (mounted) setCheckingCheckoutDetails(false);
@@ -162,6 +185,26 @@ const CartPage = () => {
     } finally {
       setSavingPhone(false);
     }
+  }
+
+  function applyPromoCode() {
+    const code = promoCodeInput.trim().toUpperCase();
+    const promo = checkoutPromoCodes.find((item) => item.code === code);
+
+    if (!code) {
+      showToast("Please enter a promo code", "error");
+      return;
+    }
+
+    if (!promo) {
+      setAppliedPromo(null);
+      showToast("Promo code is not valid", "error");
+      return;
+    }
+
+    setAppliedPromo(promo);
+    setPromoCodeInput(promo.code);
+    showToast(`${promo.discountPercent}% discount applied`, "success");
   }
 
   const savedPhone = auth?.profile?.phone ?? phoneNumber;
@@ -240,6 +283,7 @@ const CartPage = () => {
               components,
             };
           }),
+          promoCode: appliedPromo?.code,
         }),
       });
 
@@ -345,6 +389,19 @@ const CartPage = () => {
       </section>
 
       <section className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-[16px] font-semibold text-[#141B34]">Cart items</h2>
+          <button
+            type="button"
+            onClick={() => {
+              clearCart();
+              showToast("Cart cleared", "success");
+            }}
+            className="rounded-full border border-red-100 px-4 py-2 text-[12px] font-semibold text-red-600"
+          >
+            Clear cart
+          </button>
+        </div>
         {items.map((item) => (
           <div key={item.id} className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -367,9 +424,39 @@ const CartPage = () => {
                     ))}
                   </div>
                 )}
-                <Link href={`/customer/featured-combos/${item.id}`} className="underline text-[13px] text-[#DFB400]">
-                  edit combo portions
-                </Link>
+                {!item.isPromoCombo ? (
+                  <Link href={`/customer/featured-combos/${item.id}`} className="underline text-[13px] text-[#DFB400]">
+                    edit combo portions
+                  </Link>
+                ) : (
+                  <div className="mt-2 inline-flex items-center gap-3 rounded-full bg-[#FFF7E0] px-3 py-2">
+                    <button
+                      type="button"
+                      onClick={() => updateQuantity(item.id, Math.max(1, item.quantity - 1))}
+                      className="flex h-7 w-7 items-center justify-center rounded-full bg-white text-sm font-semibold text-[#141B34]"
+                    >
+                      -
+                    </button>
+                    <span className="text-[13px] font-semibold text-[#141B34]">{item.quantity} plate{item.quantity === 1 ? "" : "s"}</span>
+                    <button
+                      type="button"
+                      onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                      className="flex h-7 w-7 items-center justify-center rounded-full bg-[#DFB400] text-sm font-semibold text-white"
+                    >
+                      +
+                    </button>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    removeItem(item.id);
+                    showToast("Item removed from cart", "success");
+                  }}
+                  className="ml-3 text-[13px] font-semibold text-red-600 underline"
+                >
+                  remove
+                </button>
               </div>
             </div>
 
@@ -382,19 +469,55 @@ const CartPage = () => {
       </section>
 
       <section className="border-t pt-4 space-y-3">
+        {!hasPromoCombo ? (
+          <div className="rounded-2xl border border-[#EFEFEF] bg-white p-4">
+            <p className="text-[14px] font-semibold text-[#141B34]">Promo code</p>
+            <div className="mt-3 flex gap-2">
+              <input
+                value={promoCodeInput}
+                onChange={(event) => {
+                  setPromoCodeInput(event.target.value);
+                  if (appliedPromo) setAppliedPromo(null);
+                }}
+                placeholder="Enter promo code"
+                className="min-w-0 flex-1 rounded-xl border border-[#E5E5E5] px-4 py-3 text-sm outline-none focus:border-[#DFB400]"
+              />
+              <button
+                type="button"
+                onClick={applyPromoCode}
+                className="rounded-xl bg-[#141B34] px-4 py-3 text-sm font-semibold text-white"
+              >
+                Apply
+              </button>
+            </div>
+            {appliedPromo ? (
+              <p className="mt-2 text-xs font-semibold text-green-600">
+                {appliedPromo.code} applied - {appliedPromo.discountPercent}% off subtotal
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
         <div className="flex items-center justify-between">
           <span className="text-[14px] text-[#A4A4A4]">Subtotal</span>
           <span className="font-semibold">₦{total.toLocaleString()}</span>
         </div>
 
+        {discountAmount > 0 ? (
+          <div className="flex items-center justify-between">
+            <span className="text-[14px] text-green-600">Promo discount</span>
+            <span className="font-semibold text-green-600">-₦{discountAmount.toLocaleString()}</span>
+          </div>
+        ) : null}
+
         <div className="flex items-center justify-between">
           <span className="text-[14px] text-[#A4A4A4]">Delivery</span>
-          <span className="font-semibold">₦{DELIVERY_FEE_AMOUNT.toLocaleString()}</span>
+          <span className="font-semibold">₦{deliveryFeeAmount.toLocaleString()}</span>
         </div>
 
         <div className="flex items-center justify-between">
           <span className="text-[14px] text-[#A4A4A4]">Service charge</span>
-          <span className="font-semibold">₦{SERVICE_CHARGE_AMOUNT.toLocaleString()}</span>
+          <span className="font-semibold">₦{serviceChargeAmount.toLocaleString()}</span>
         </div>
 
         <div className="flex items-center justify-between text-[16px] font-semibold">

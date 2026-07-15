@@ -355,6 +355,7 @@ function AddRiderModal({ serviceAreas, onClose, onSaved }: { serviceAreas: strin
   const showToast = useToastStore((s) => s.showToast);
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
   const [vehicleType, setVehicleType] = useState<VehicleType>("Motorcycle");
   const [serviceArea, setServiceArea] = useState(serviceAreas[0] ?? "");
   const steps = ["Personal info", "Vehicle & zone", "Documents", "Bank details"];
@@ -372,26 +373,32 @@ function AddRiderModal({ serviceAreas, onClose, onSaved }: { serviceAreas: strin
     }
 
     const formData = new FormData(event.currentTarget);
-    const body = {
-      fullName: String(formData.get("fullName") ?? ""),
-      email: String(formData.get("email") ?? ""),
-      phone: String(formData.get("phone") ?? ""),
-      address: String(formData.get("address") ?? ""),
-      vehicleType,
-      plateNumber: String(formData.get("plateNumber") ?? ""),
-      vehicleColor: String(formData.get("vehicleColor") ?? ""),
-      vehicleModel: String(formData.get("vehicleModel") ?? ""),
-      serviceArea,
-      governmentIdUrl: cleanOptionalUrl(formData.get("governmentIdUrl")),
-      vehicleLicenseUrl: cleanOptionalUrl(formData.get("vehicleLicenseUrl")),
-      proofOfAddressUrl: cleanOptionalUrl(formData.get("proofOfAddressUrl")),
-      bankName: String(formData.get("bankName") ?? ""),
-      accountNumber: String(formData.get("accountNumber") ?? ""),
-      accountName: String(formData.get("accountName") ?? ""),
-    };
 
     setSaving(true);
+    setUploadProgress(null);
     try {
+      const [governmentIdUrl, vehicleLicenseUrl, proofOfAddressUrl] = await Promise.all([
+        uploadAdminDocument(getSelectedFile(formData, "governmentIdFile"), setUploadProgress),
+        uploadAdminDocument(getSelectedFile(formData, "vehicleLicenseFile"), setUploadProgress),
+        uploadAdminDocument(getSelectedFile(formData, "proofOfAddressFile"), setUploadProgress),
+      ]);
+      const body = {
+        fullName: String(formData.get("fullName") ?? ""),
+        email: String(formData.get("email") ?? ""),
+        phone: String(formData.get("phone") ?? ""),
+        address: String(formData.get("address") ?? ""),
+        vehicleType,
+        plateNumber: String(formData.get("plateNumber") ?? ""),
+        vehicleColor: String(formData.get("vehicleColor") ?? ""),
+        vehicleModel: String(formData.get("vehicleModel") ?? ""),
+        serviceArea,
+        governmentIdUrl,
+        vehicleLicenseUrl,
+        proofOfAddressUrl,
+        bankName: String(formData.get("bankName") ?? ""),
+        accountNumber: String(formData.get("accountNumber") ?? ""),
+        accountName: String(formData.get("accountName") ?? ""),
+      };
       const response = await fetch(`${API_BASE_URL}/admin/riders`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -405,12 +412,13 @@ function AddRiderModal({ serviceAreas, onClose, onSaved }: { serviceAreas: strin
       showToast(error instanceof Error ? error.message : "Unable to add rider", "error");
     } finally {
       setSaving(false);
+      setUploadProgress(null);
     }
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4 backdrop-blur-sm">
-      <form onSubmit={submitRider} className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl">
+      <form onSubmit={submitRider} noValidate className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl">
         <div className="flex items-start justify-between">
           <div>
             <h2 className="text-sm font-semibold text-[#101828]">Add Rider</h2>
@@ -429,10 +437,10 @@ function AddRiderModal({ serviceAreas, onClose, onSaved }: { serviceAreas: strin
         </div>
 
         <div className="mt-5">
-          {step === 1 ? <PersonalInfoStep /> : null}
-          {step === 2 ? <VehicleZoneStep serviceAreas={serviceAreas} serviceArea={serviceArea} vehicleType={vehicleType} onServiceAreaChange={setServiceArea} onVehicleTypeChange={setVehicleType} /> : null}
-          {step === 3 ? <DocumentsStep /> : null}
-          {step === 4 ? <BankDetailsStep /> : null}
+          <div className={step === 1 ? "block" : "hidden"}><PersonalInfoStep /></div>
+          <div className={step === 2 ? "block" : "hidden"}><VehicleZoneStep serviceAreas={serviceAreas} serviceArea={serviceArea} vehicleType={vehicleType} onServiceAreaChange={setServiceArea} onVehicleTypeChange={setVehicleType} /></div>
+          <div className={step === 3 ? "block" : "hidden"}><DocumentsStep progress={uploadProgress} /></div>
+          <div className={step === 4 ? "block" : "hidden"}><BankDetailsStep /></div>
         </div>
 
         <div className="mt-6 flex items-center justify-between border-t border-gray-100 pt-4">
@@ -502,12 +510,12 @@ function VehicleZoneStep({
   );
 }
 
-function DocumentsStep() {
+function DocumentsStep({ progress }: { progress: UploadProgress | null }) {
   return (
     <div className="grid grid-cols-3 gap-4">
-      <UploadBox label="Government ID" inputName="governmentIdUrl" />
-      <UploadBox label="Vehicle license" inputName="vehicleLicenseUrl" />
-      <UploadBox label="Proof of address" inputName="proofOfAddressUrl" />
+      <UploadBox label="Government ID" inputName="governmentIdFile" progress={progress} />
+      <UploadBox label="Vehicle license" inputName="vehicleLicenseFile" progress={progress} />
+      <UploadBox label="Proof of address" inputName="proofOfAddressFile" progress={progress} />
     </div>
   );
 }
@@ -583,13 +591,15 @@ function FormField({ label, ...props }: React.InputHTMLAttributes<HTMLInputEleme
   return <label className="block"><span className="text-[10px] font-semibold text-[#6A7282]">{label}</span><input {...props} className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-[11px] outline-none focus:border-[#FE9A00] focus:ring-2 focus:ring-[#FE9A00]/10" /></label>;
 }
 
-function UploadBox({ label, inputName }: { label: string; inputName: string }) {
+function UploadBox({ label, inputName, progress }: { label: string; inputName: string; progress: UploadProgress | null }) {
+  const [fileName, setFileName] = useState("");
   return (
-    <label className="block rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-4 text-center hover:border-[#FE9A00] hover:bg-[#FFFBEB]">
+    <label className="block cursor-pointer rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-4 text-center hover:border-[#FE9A00] hover:bg-[#FFFBEB]">
       <FaDownload className="mx-auto text-[#FE9A00]" />
       <p className="mt-3 text-[11px] font-semibold text-[#101828]">{label}</p>
-      <p className="mt-1 text-[10px] text-[#99A1AF]">Paste uploaded file URL</p>
-      <input name={inputName} type="url" placeholder="https://..." className="mt-3 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-[10px] outline-none focus:border-[#FE9A00] focus:ring-2 focus:ring-[#FE9A00]/10" />
+      <p className="mt-1 text-[10px] text-[#99A1AF]">{fileName || "PDF or image, max 8MB"}</p>
+      {progress ? <p className="mt-2 text-[10px] font-semibold text-[#FE9A00]">{progress.label} - {progress.percent}%</p> : null}
+      <input name={inputName} type="file" accept="image/*,.pdf" className="sr-only" onChange={(event) => setFileName(event.currentTarget.files?.[0]?.name ?? "")} />
     </label>
   );
 }
@@ -612,7 +622,63 @@ function formatDate(value: string) {
   return new Intl.DateTimeFormat("en-NG", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(value));
 }
 
-function cleanOptionalUrl(value: FormDataEntryValue | null) {
-  const text = String(value ?? "").trim();
-  return text.length ? text : null;
+type CloudinarySignatureResponse = {
+  upload: {
+    apiKey: string;
+    timestamp: number;
+    signature: string;
+    folder: string;
+    publicId: string;
+    uploadUrl: string;
+  };
+};
+
+type CloudinaryUploadResponse = {
+  secure_url: string;
+};
+
+type UploadProgress = {
+  label: string;
+  percent: number;
+};
+
+function getSelectedFile(formData: FormData, name: string) {
+  const value = formData.get(name);
+  if (!(value instanceof File) || value.size === 0) return null;
+  return value;
+}
+
+async function uploadAdminDocument(file: File | null, onProgress?: (progress: UploadProgress) => void) {
+  if (!file) return null;
+  if (file.size > 8 * 1024 * 1024) throw new Error("Documents must be 8MB or smaller");
+  if (!file.type.startsWith("image/") && file.type !== "application/pdf") throw new Error("Documents must be an image or PDF");
+
+  onProgress?.({ label: `Preparing ${file.name}`, percent: 20 });
+  const signatureResponse = await fetch(`${API_BASE_URL}/uploads/signature`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type: "vendor_document" }),
+  });
+  if (!signatureResponse.ok) throw new Error("Unable to prepare document upload");
+
+  const { upload } = (await signatureResponse.json()) as CloudinarySignatureResponse;
+  const cloudinaryFormData = new FormData();
+  cloudinaryFormData.append("file", file);
+  cloudinaryFormData.append("api_key", upload.apiKey);
+  cloudinaryFormData.append("timestamp", String(upload.timestamp));
+  cloudinaryFormData.append("signature", upload.signature);
+  cloudinaryFormData.append("folder", upload.folder);
+  cloudinaryFormData.append("public_id", upload.publicId);
+
+  onProgress?.({ label: `Uploading ${file.name}`, percent: 65 });
+  const cloudinaryResponse = await fetch(upload.uploadUrl, {
+    method: "POST",
+    body: cloudinaryFormData,
+  });
+  if (!cloudinaryResponse.ok) throw new Error("Unable to upload document");
+
+  const uploadedFile = (await cloudinaryResponse.json()) as CloudinaryUploadResponse;
+  onProgress?.({ label: `${file.name} uploaded`, percent: 100 });
+  return uploadedFile.secure_url;
 }

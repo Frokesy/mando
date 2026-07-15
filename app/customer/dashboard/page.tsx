@@ -14,6 +14,8 @@ import {
   SearchIcon,
 } from "@/components/svgs/DefaultIcons";
 import useNotificationStore from "@/store/notificationStore";
+import useCartStore from "@/store/cartStore";
+import { useToastStore } from "@/store/toastStore";
 
 const API_BASE_URL =
   (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000").replace(/\/+$/, "");
@@ -41,6 +43,79 @@ type ComboSummary = {
   };
 };
 
+type PromoCombo = {
+  id: string;
+  bannerImage: string;
+  title: string;
+  subtitle: string;
+  restaurantName: string;
+  customRestaurantId: string;
+  comboName: string;
+  price: number;
+  components: {
+    menuItemId: string;
+    name: string;
+    quantity: number;
+    baseQuantity: number;
+    unitPrice: number;
+  }[];
+};
+
+const promoCombos: PromoCombo[] = [
+  {
+    id: "promo-weekend-rice",
+    bannerImage: "/ad.png",
+    title: "Weekend rice deal",
+    subtitle: "A ready-to-order promo plate for lunch cravings.",
+    restaurantName: "Mama Chef Cafe",
+    customRestaurantId: "00000000-0000-4000-8000-000000000101",
+    comboName: "Promo Jollof Rice Plate",
+    price: 2500,
+    components: [
+      {
+        menuItemId: "00000000-0000-4000-8000-000000000201",
+        name: "Jollof rice",
+        quantity: 2,
+        baseQuantity: 2,
+        unitPrice: 900,
+      },
+      {
+        menuItemId: "00000000-0000-4000-8000-000000000202",
+        name: "Chicken",
+        quantity: 1,
+        baseQuantity: 1,
+        unitPrice: 700,
+      },
+    ],
+  },
+  {
+    id: "promo-local-bowl",
+    bannerImage: "/ad.png",
+    title: "Local bowl special",
+    subtitle: "A quick promo combo for local food lovers.",
+    restaurantName: "Mama Chef Cafe",
+    customRestaurantId: "00000000-0000-4000-8000-000000000101",
+    comboName: "Promo Local Bowl",
+    price: 2200,
+    components: [
+      {
+        menuItemId: "00000000-0000-4000-8000-000000000203",
+        name: "Amala",
+        quantity: 2,
+        baseQuantity: 2,
+        unitPrice: 600,
+      },
+      {
+        menuItemId: "00000000-0000-4000-8000-000000000204",
+        name: "Ewedu and stew",
+        quantity: 1,
+        baseQuantity: 1,
+        unitPrice: 1000,
+      },
+    ],
+  },
+];
+
 function formatAddress(address: SavedAddress) {
   return `${address.streetAddress}, ${address.serviceArea.name}`;
 }
@@ -53,11 +128,14 @@ const Dashboard = () => {
   const router = useRouter();
   const unreadCount = useNotificationStore((s) => s.unreadCount());
   const setNotifications = useNotificationStore((s) => s.setNotifications);
+  const addItem = useCartStore((s) => s.addItem);
+  const showToast = useToastStore((s) => s.showToast);
   const [deliveryAddress, setDeliveryAddress] = useState("Add delivery address");
   const [combos, setCombos] = useState<ComboSummary[]>([]);
   const [combosLoading, setCombosLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const [activePromoIndex, setActivePromoIndex] = useState(0);
 
   useEffect(() => {
     let mounted = true;
@@ -128,6 +206,14 @@ const Dashboard = () => {
     if (storedSearches) setRecentSearches(JSON.parse(storedSearches) as string[]);
   }, []);
 
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setActivePromoIndex((current) => (current + 1) % promoCombos.length);
+    }, 4000);
+
+    return () => window.clearInterval(timer);
+  }, []);
+
   const comboSearchResults = useMemo(
     () =>
       combos
@@ -156,6 +242,25 @@ const Dashboard = () => {
     localStorage.setItem("mando_recent_searches", JSON.stringify(nextSearches));
     router.push(`/customer/featured-combos?q=${encodeURIComponent(query)}`);
   }
+
+  function addPromoComboToCart(promo: PromoCombo) {
+    addItem({
+      id: promo.id,
+      image: promo.bannerImage,
+      restaurantName: promo.restaurantName,
+      comboName: promo.comboName,
+      quantity: 1,
+      price: promo.price,
+      customRestaurantId: promo.customRestaurantId,
+      isCustomCombo: true,
+      isPromoCombo: true,
+      components: promo.components,
+    });
+    showToast("Promo combo added to cart", "success");
+    router.push("/customer/cart");
+  }
+
+  const activePromo = promoCombos[activePromoIndex];
 
   return (
     <div className="p-6 pb-28">
@@ -213,7 +318,25 @@ const Dashboard = () => {
       </div>
 
       <div className="mt-10">
-        <img src="/ad.png" className="w-full" alt="promo-banner" />
+        <button
+          type="button"
+          onClick={() => addPromoComboToCart(activePromo)}
+          className="relative block w-full overflow-hidden rounded-3xl text-left shadow-sm"
+        >
+          <img src={activePromo.bannerImage} className="h-40 w-full object-cover" alt={activePromo.title} />
+          <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/35 to-transparent" />
+          <div className="absolute inset-y-0 left-0 flex max-w-[72%] flex-col justify-center p-5 text-white">
+            <p className="text-xs font-semibold uppercase tracking-wide text-[#FFE17A]">Promo combo</p>
+            <h3 className="mt-1 text-2xl font-bold leading-tight">{activePromo.title}</h3>
+            <p className="mt-2 text-sm text-white/85">{activePromo.subtitle}</p>
+            <p className="mt-3 text-sm font-semibold">From {activePromo.restaurantName} - {formatNaira(activePromo.price)}</p>
+          </div>
+          <div className="absolute bottom-3 right-4 flex gap-1">
+            {promoCombos.map((promo, index) => (
+              <span key={promo.id} className={`h-2 rounded-full ${index === activePromoIndex ? "w-6 bg-white" : "w-2 bg-white/55"}`} />
+            ))}
+          </div>
+        </button>
       </div>
 
       <div className="mt-10">

@@ -10,6 +10,7 @@ export type CartItem = {
   price: number; // unit price
   customRestaurantId?: string;
   isCustomCombo?: boolean;
+  isPromoCombo?: boolean;
   components?: CartItemComponent[];
 };
 

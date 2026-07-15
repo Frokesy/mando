@@ -7,6 +7,7 @@ import { serializeClearSessionCookie } from '../auth/index.js'
 import { database } from '../db/client.js'
 import {
   addresses,
+  adminSettings,
   comboItems,
   combos,
   commissions,
@@ -100,6 +101,7 @@ const createOrderBodySchema = z.object({
     .enum(['bank_transfer', 'card', 'bank', 'ussd', 'wallet'])
     .default('card'),
   customerNote: z.string().trim().max(500).nullable().optional(),
+  promoCode: z.string().trim().max(40).nullable().optional(),
   testBypassPayment: z.boolean().optional(),
   items: z.array(createOrderLineItemSchema).min(1).max(25),
 })
@@ -124,6 +126,10 @@ const reviewOrderBodySchema = z.object({
 const MAX_CUSTOMER_ADDRESSES = 3
 const SERVICE_CHARGE_AMOUNT = 50
 const DELIVERY_FEE_AMOUNT = 400
+const CHECKOUT_PROMO_CODES = [
+  { code: 'MANDO10', discountPercent: 10 },
+  { code: 'LUNCH15', discountPercent: 15 },
+]
 const RIDER_DELIVERY_EARNING_BPS = 8000
 const FIRST_ORDER_AGENT_COMMISSION_AMOUNT = 500
 const FIRST_ORDER_UPLINE_COMMISSION_AMOUNT = 100
@@ -166,6 +172,12 @@ export async function customerRoutes(app: FastifyInstance) {
 
     return reply.status(200).send({
       serviceAreas: activeServiceAreas,
+    })
+  })
+
+  app.get('/checkout-settings', async (_request, reply) => {
+    return reply.status(200).send({
+      checkoutSettings: await selectCheckoutSettings(),
     })
   })
 
@@ -778,9 +790,10 @@ export async function customerRoutes(app: FastifyInstance) {
       (total, item) => total + item.lineTotalAmount,
       0,
     )
-    const deliveryFeeAmount = DELIVERY_FEE_AMOUNT
-    const serviceChargeAmount = SERVICE_CHARGE_AMOUNT
-    const discountAmount = 0
+    const checkoutSettings = await selectCheckoutSettings()
+    const deliveryFeeAmount = checkoutSettings.deliveryFeeAmount
+    const serviceChargeAmount = checkoutSettings.serviceChargeAmount
+    const discountAmount = calculateCheckoutDiscount(body.promoCode, subtotalAmount)
     const totalAmount = subtotalAmount + deliveryFeeAmount + serviceChargeAmount - discountAmount
     const restaurantCommissionBps =
       comboRows[0]?.restaurantPlatformCommissionBps ??
@@ -1835,6 +1848,39 @@ function sendOrderNotFound(reply: FastifyReply) {
     error: 'order_not_found',
     message: 'Order not found.',
   })
+}
+
+async function selectCheckoutSettings() {
+  const [settings] = await database
+    .select({ value: adminSettings.value })
+    .from(adminSettings)
+    .where(eq(adminSettings.settingsKey, 'service_charges'))
+    .limit(1)
+
+  const value = settings?.value as
+    | { serviceChargeAmount?: unknown; deliveryFeeAmount?: unknown }
+    | undefined
+
+  return {
+    serviceChargeAmount:
+      typeof value?.serviceChargeAmount === 'number'
+        ? value.serviceChargeAmount
+        : SERVICE_CHARGE_AMOUNT,
+    deliveryFeeAmount:
+      typeof value?.deliveryFeeAmount === 'number'
+        ? value.deliveryFeeAmount
+        : DELIVERY_FEE_AMOUNT,
+  }
+}
+
+function calculateCheckoutDiscount(promoCode: string | null | undefined, subtotalAmount: number) {
+  const code = promoCode?.trim().toUpperCase()
+  if (!code) return 0
+
+  const promo = CHECKOUT_PROMO_CODES.find((item) => item.code === code)
+  if (!promo) return 0
+
+  return Math.min(subtotalAmount, Math.round((subtotalAmount * promo.discountPercent) / 100))
 }
 
 function isValidBirthdayInput(value: string) {

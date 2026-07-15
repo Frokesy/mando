@@ -13,7 +13,11 @@ import { getCurrentSessionContext } from '../auth/current-session.js'
 import { database } from '../db/client.js'
 import {
   adminPayoutSettings,
+  adminSettings,
   authSessions,
+  comboItems,
+  combos,
+  commissions,
   deliveries,
   menuItems,
   orderIssues,
@@ -25,6 +29,7 @@ import {
   payoutRequests,
   payments,
   profiles,
+  referrals,
   restaurantEarnings,
   restaurantMembers,
   restaurantOperations,
@@ -142,6 +147,103 @@ const riderStatusBodySchema = z.object({
 
 const riderZoneBodySchema = z.object({
   serviceArea: z.string().trim().min(2),
+})
+
+const serviceChargesBodySchema = z.object({
+  serviceChargeAmount: z.coerce.number().int().nonnegative(),
+  deliveryFeeAmount: z.coerce.number().int().nonnegative(),
+  appliesTo: z.string().trim().optional(),
+  effectiveDate: z.string().trim().optional(),
+})
+
+const transactionParamsSchema = z.object({
+  transactionId: z.uuid(),
+})
+
+const salesAgentParamsSchema = z.object({
+  agentId: z.uuid(),
+})
+
+const salesAgentBodySchema = z.object({
+  firstName: z.string().trim().min(1),
+  lastName: z.string().trim().min(1),
+  address: z.string().trim().optional(),
+  phone: z.string().trim().min(5),
+  email: z.email().trim().toLowerCase(),
+  agentType: z.string().trim().default('Sales agent'),
+  level: z.string().trim().default('Starter'),
+  referralCode: z.string().trim().optional(),
+  bankName: z.string().trim().optional(),
+  accountNumber: z.string().trim().optional(),
+  accountName: z.string().trim().optional(),
+})
+
+const salesAgentUpdateBodySchema = z.object({
+  fullName: z.string().trim().min(2).optional(),
+  phone: z.string().trim().min(5).optional(),
+  email: z.email().trim().toLowerCase().optional(),
+  agentCode: z.string().trim().optional(),
+  status: z.enum(['active', 'pending', 'suspended']).optional(),
+  commissionRate: z.coerce.number().min(0).max(100).optional(),
+})
+
+const salesAgentStatusBodySchema = z.object({
+  status: z.enum(['active', 'pending', 'suspended']),
+})
+
+const influencerBodySchema = z.object({
+  influencer: z.boolean(),
+})
+
+const adminSettingsBodySchema = z.record(z.string(), z.unknown())
+
+const adminComboItemBodySchema = z.object({
+  name: z.string().trim().min(1),
+  quantity: z.coerce.number().int().positive().default(1),
+  extraPrice: z.coerce.number().int().nonnegative().default(0),
+})
+
+const adminComboBodySchema = z.object({
+  name: z.string().trim().min(2),
+  restaurant: z.string().trim().min(2),
+  category: z.string().trim().optional(),
+  description: z.string().trim().optional(),
+  imageUrl: z.string().trim().optional(),
+  price: z.coerce.number().int().positive(),
+  status: z.enum(['active', 'draft', 'paused', 'sold out']).default('active'),
+  isFeatured: z.boolean().default(false),
+  items: z.array(adminComboItemBodySchema).min(1),
+})
+
+const adminComboUpdateBodySchema = adminComboBodySchema.partial().extend({
+  status: z.enum(['active', 'draft', 'paused', 'sold out']).optional(),
+})
+
+const comboParamsSchema = z.object({
+  comboId: z.uuid(),
+})
+
+const promoCampaignBodySchema = z.object({
+  id: z.string().trim().optional(),
+  name: z.string().trim().min(2),
+  channel: z.string().trim().min(2),
+  audience: z.string().trim().min(2),
+  budget: z.coerce.number().int().nonnegative(),
+  status: z.enum(['active', 'scheduled', 'paused', 'ended']).default('scheduled'),
+  startsAt: z.string().trim().min(1),
+  endsAt: z.string().trim().min(1),
+  offer: z.string().trim().min(2),
+  imageUrl: z.string().trim().nullable().optional(),
+  campaignType: z.string().trim().optional(),
+  targetLocation: z.string().trim().optional(),
+})
+
+const promoCampaignParamsSchema = z.object({
+  campaignId: z.string().trim().min(1),
+})
+
+const promoRulesBodySchema = z.object({
+  rules: z.string().trim().min(1),
 })
 
 export async function adminRoutes(app: FastifyInstance) {
@@ -900,6 +1002,291 @@ export async function adminRoutes(app: FastifyInstance) {
 
     return reply.status(200).send({ vendor })
   })
+
+  app.get('/financials', async (_request, reply) => {
+    return reply.status(200).send(await selectAdminFinancials())
+  })
+
+  app.patch('/financials/service-charges', async (request, reply) => {
+    const parsedBody = serviceChargesBodySchema.safeParse(request.body)
+    if (!parsedBody.success) {
+      return reply.status(400).send({
+        error: 'validation_error',
+        message: 'Please provide valid service charge settings.',
+      })
+    }
+
+    const settings = await upsertAdminSetting('financial_service_charges', parsedBody.data)
+    return reply.status(200).send({ settings })
+  })
+
+  app.post('/financials/transactions/:transactionId/refund', async (request, reply) => {
+    const parsedParams = transactionParamsSchema.safeParse(request.params)
+    if (!parsedParams.success) {
+      return reply.status(400).send({
+        error: 'validation_error',
+        message: 'Please choose a valid transaction.',
+      })
+    }
+
+    const [payment] = await database
+      .select()
+      .from(payments)
+      .where(eq(payments.id, parsedParams.data.transactionId))
+      .limit(1)
+
+    if (!payment) {
+      return reply.status(404).send({
+        error: 'transaction_not_found',
+        message: 'Transaction not found.',
+      })
+    }
+
+    const [updatedPayment] = await database
+      .update(payments)
+      .set({
+        status: 'refunded',
+        updatedAt: new Date(),
+      })
+      .where(eq(payments.id, payment.id))
+      .returning({ id: payments.id, orderId: payments.orderId })
+
+    await database
+      .update(orders)
+      .set({ status: 'refunded', updatedAt: new Date() })
+      .where(eq(orders.id, updatedPayment.orderId))
+
+    return reply.status(200).send({
+      transaction: await selectAdminFinancialTransaction(updatedPayment.id),
+    })
+  })
+
+  app.get('/food-combos', async (_request, reply) => {
+    return reply.status(200).send(await selectAdminFoodCombos())
+  })
+
+  app.post('/food-combos', async (request, reply) => {
+    const parsedBody = adminComboBodySchema.safeParse(request.body)
+    if (!parsedBody.success) {
+      return reply.status(400).send({
+        error: 'validation_error',
+        message: 'Please complete the combo form.',
+      })
+    }
+
+    const combo = await createAdminFoodCombo(parsedBody.data)
+    return reply.status(201).send({ combo })
+  })
+
+  app.patch('/food-combos/:comboId', async (request, reply) => {
+    const parsedParams = comboParamsSchema.safeParse(request.params)
+    const parsedBody = adminComboUpdateBodySchema.safeParse(request.body)
+    if (!parsedParams.success || !parsedBody.success) {
+      return reply.status(400).send({
+        error: 'validation_error',
+        message: 'Please provide valid combo details.',
+      })
+    }
+
+    const combo = await updateAdminFoodCombo(parsedParams.data.comboId, parsedBody.data)
+    if (!combo) return reply.status(404).send({ error: 'combo_not_found', message: 'Combo not found.' })
+    return reply.status(200).send({ combo })
+  })
+
+  app.delete('/food-combos/:comboId', async (request, reply) => {
+    const parsedParams = comboParamsSchema.safeParse(request.params)
+    if (!parsedParams.success) {
+      return reply.status(400).send({
+        error: 'validation_error',
+        message: 'Please choose a valid combo.',
+      })
+    }
+
+    await database.delete(combos).where(eq(combos.id, parsedParams.data.comboId))
+    return reply.status(200).send({ ok: true })
+  })
+
+  app.get('/sales', async (_request, reply) => {
+    return reply.status(200).send(await selectAdminSalesAgents())
+  })
+
+  app.post('/sales/agents', async (request, reply) => {
+    const parsedBody = salesAgentBodySchema.safeParse(request.body)
+    if (!parsedBody.success) {
+      return reply.status(400).send({
+        error: 'validation_error',
+        message: 'Please complete the agent form.',
+      })
+    }
+
+    try {
+      const agent = await createAdminSalesAgent(parsedBody.data)
+      return reply.status(201).send({ agent, temporaryPassword: createTemporaryPassword() })
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        return reply.status(409).send({
+          error: 'agent_email_exists',
+          message: 'A user with this email already exists. Use a different email or edit the existing account.',
+        })
+      }
+      throw error
+    }
+  })
+
+  app.patch('/sales/agents/:agentId', async (request, reply) => {
+    const parsedParams = salesAgentParamsSchema.safeParse(request.params)
+    const parsedBody = salesAgentUpdateBodySchema.safeParse(request.body)
+    if (!parsedParams.success || !parsedBody.success) {
+      return reply.status(400).send({
+        error: 'validation_error',
+        message: 'Please provide valid agent details.',
+      })
+    }
+
+    const agent = await updateAdminSalesAgent(parsedParams.data.agentId, parsedBody.data)
+    if (!agent) return reply.status(404).send({ error: 'agent_not_found', message: 'Agent not found.' })
+    return reply.status(200).send({ agent })
+  })
+
+  app.patch('/sales/agents/:agentId/status', async (request, reply) => {
+    const parsedParams = salesAgentParamsSchema.safeParse(request.params)
+    const parsedBody = salesAgentStatusBodySchema.safeParse(request.body)
+    if (!parsedParams.success || !parsedBody.success) {
+      return reply.status(400).send({
+        error: 'validation_error',
+        message: 'Please provide a valid agent status.',
+      })
+    }
+
+    const agent = await updateAdminSalesAgent(parsedParams.data.agentId, {
+      status: parsedBody.data.status,
+    })
+    if (!agent) return reply.status(404).send({ error: 'agent_not_found', message: 'Agent not found.' })
+    return reply.status(200).send({ agent })
+  })
+
+  app.patch('/sales/agents/:agentId/influencer', async (request, reply) => {
+    const parsedParams = salesAgentParamsSchema.safeParse(request.params)
+    const parsedBody = influencerBodySchema.safeParse(request.body)
+    if (!parsedParams.success || !parsedBody.success) {
+      return reply.status(400).send({
+        error: 'validation_error',
+        message: 'Please choose a valid influencer setting.',
+      })
+    }
+
+    const [profile] = await database
+      .update(salesAgentProfiles)
+      .set({
+        tier: parsedBody.data.influencer ? 'influencer' : 'standard',
+        updatedAt: new Date(),
+      })
+      .where(eq(salesAgentProfiles.userId, parsedParams.data.agentId))
+      .returning({ userId: salesAgentProfiles.userId })
+
+    if (!profile) return reply.status(404).send({ error: 'agent_not_found', message: 'Agent not found.' })
+    return reply.status(200).send({ agent: await selectAdminSalesAgentDetail(profile.userId) })
+  })
+
+  app.delete('/sales/agents/:agentId', async (request, reply) => {
+    const parsedParams = salesAgentParamsSchema.safeParse(request.params)
+    if (!parsedParams.success) {
+      return reply.status(400).send({
+        error: 'validation_error',
+        message: 'Please choose a valid agent.',
+      })
+    }
+
+    await database
+      .update(users)
+      .set({ status: 'disabled', updatedAt: new Date() })
+      .where(eq(users.id, parsedParams.data.agentId))
+
+    return reply.status(200).send({ ok: true })
+  })
+
+  app.get('/sales/settings', async (_request, reply) => {
+    return reply.status(200).send({
+      settings: await selectAdminSetting('sales_settings', defaultSalesSettings()),
+    })
+  })
+
+  app.patch('/sales/settings', async (request, reply) => {
+    const parsedBody = adminSettingsBodySchema.safeParse(request.body)
+    if (!parsedBody.success) {
+      return reply.status(400).send({
+        error: 'validation_error',
+        message: 'Please provide valid sales settings.',
+      })
+    }
+
+    const settings = await upsertAdminSetting('sales_settings', parsedBody.data)
+    return reply.status(200).send({ settings })
+  })
+
+  app.get('/promo', async (_request, reply) => {
+    return reply.status(200).send(await selectAdminPromo())
+  })
+
+  app.post('/promo/campaigns', async (request, reply) => {
+    const parsedBody = promoCampaignBodySchema.safeParse(request.body)
+    if (!parsedBody.success) {
+      return reply.status(400).send({
+        error: 'validation_error',
+        message: 'Please complete the campaign form.',
+      })
+    }
+
+    const campaign = await saveAdminPromoCampaign(parsedBody.data)
+    return reply.status(201).send({ campaign, promo: await selectAdminPromo() })
+  })
+
+  app.patch('/promo/campaigns/:campaignId', async (request, reply) => {
+    const parsedParams = promoCampaignParamsSchema.safeParse(request.params)
+    const parsedBody = promoCampaignBodySchema.partial().safeParse(request.body)
+    if (!parsedParams.success || !parsedBody.success) {
+      return reply.status(400).send({
+        error: 'validation_error',
+        message: 'Please provide valid campaign details.',
+      })
+    }
+
+    const campaign = await saveAdminPromoCampaign({
+      id: parsedParams.data.campaignId,
+      ...parsedBody.data,
+    })
+    return reply.status(200).send({ campaign, promo: await selectAdminPromo() })
+  })
+
+  app.delete('/promo/campaigns/:campaignId', async (request, reply) => {
+    const parsedParams = promoCampaignParamsSchema.safeParse(request.params)
+    if (!parsedParams.success) {
+      return reply.status(400).send({
+        error: 'validation_error',
+        message: 'Please choose a valid campaign.',
+      })
+    }
+
+    const promo = await selectAdminPromo()
+    await upsertAdminSetting(
+      'promo_campaigns',
+      promo.campaigns.filter((campaign) => campaign.id !== parsedParams.data.campaignId),
+    )
+    return reply.status(200).send({ ok: true, promo: await selectAdminPromo() })
+  })
+
+  app.patch('/promo/rules', async (request, reply) => {
+    const parsedBody = promoRulesBodySchema.safeParse(request.body)
+    if (!parsedBody.success) {
+      return reply.status(400).send({
+        error: 'validation_error',
+        message: 'Please provide coupon rules.',
+      })
+    }
+
+    const rules = await upsertAdminSetting('promo_coupon_rules', parsedBody.data.rules)
+    return reply.status(200).send({ rules })
+  })
 }
 
 async function requireAdmin(cookieHeader: string | undefined, reply: FastifyReply) {
@@ -1396,6 +1783,704 @@ async function upsertVendorDocuments(
   }
 }
 
+async function selectAdminFinancials() {
+  const [orderRows, paymentRows, earningRows, deliveryRows, payoutRows, orderDetails, serviceChargeSettings] =
+    await Promise.all([
+      database.select().from(orders),
+      database.select().from(payments),
+      database.select().from(restaurantEarnings),
+      database.select().from(deliveries),
+      database.select().from(payoutRequests).orderBy(desc(payoutRequests.requestedAt)),
+      selectAdminOrders(100),
+      selectAdminSetting('financial_service_charges', {
+        serviceChargeAmount: 50,
+        deliveryFeeAmount: 400,
+        appliesTo: 'All service areas',
+        effectiveDate: '',
+      }),
+    ])
+
+  const serviceChargeRevenue = orderRows.reduce(
+    (total, order) => total + order.serviceChargeAmount,
+    0,
+  )
+  const restaurantCommissionRevenue = earningRows.reduce(
+    (total, earning) => total + earning.platformFeeAmount,
+    0,
+  )
+  const deliveryCommissionRevenue = deliveryRows.reduce(
+    (total, delivery) =>
+      total + Math.max(delivery.deliveryFeeAmount - delivery.riderEarningAmount, 0),
+    0,
+  )
+  const totalPayouts = payoutRows
+    .filter((request) => ['approved', 'processing', 'paid'].includes(request.status))
+    .reduce((total, request) => total + request.amount, 0)
+  const pendingPayouts = payoutRows
+    .filter((request) => ['pending', 'under_review', 'processing'].includes(request.status))
+    .reduce((total, request) => total + request.amount, 0)
+  const totalRefunds = paymentRows
+    .filter((payment) => payment.status === 'refunded')
+    .reduce((total, payment) => total + payment.amount, 0)
+  const paymentByOrderId = new Map(paymentRows.map((payment) => [payment.orderId, payment]))
+
+  return {
+    stats: {
+      totalRevenue: serviceChargeRevenue + restaurantCommissionRevenue + deliveryCommissionRevenue,
+      totalPayouts,
+      pendingPayouts,
+      totalRefunds,
+    },
+    serviceCharges: {
+      serviceChargeAmount: serviceChargeSettings.serviceChargeAmount,
+      deliveryFeeAmount: serviceChargeSettings.deliveryFeeAmount,
+    },
+    transactions: orderDetails.map((order) => {
+      const payment = paymentByOrderId.get(order.id)
+
+      return {
+        id: payment?.id ?? order.id,
+        transactionId: payment?.providerReference ?? payment?.customerReference ?? order.orderNumber,
+        orderRef: order.orderNumber,
+        customer: order.customer.name,
+        restaurant: order.restaurant.name,
+        rider: order.rider?.name ?? 'Unassigned',
+        amount: payment?.amount ?? order.totalAmount,
+        totalAmount: order.totalAmount,
+        type: payment?.status === 'refunded' || order.status === 'refunded' ? 'refund' : 'payment',
+        status: mapFinancialTransactionStatus(payment?.status, order.status),
+        dateTime: payment?.paidAt ?? payment?.createdAt ?? order.placedAt,
+        paymentMethod: formatPaymentMethod(payment?.method ?? null),
+        paymentSummary: {
+          subtotal: order.totalAmount - order.deliveryFeeAmount - order.serviceChargeAmount,
+          serviceCharge: order.serviceChargeAmount,
+          deliveryFee: order.deliveryFeeAmount,
+          discount: 0,
+          total: order.totalAmount,
+        },
+        parties: {
+          customer: order.customer.name,
+          restaurant: order.restaurant.name,
+          rider: order.rider?.name ?? 'Unassigned',
+        },
+        canRefund: payment?.status === 'verified' || order.status === 'delivered',
+        refundRequested: order.status === 'refunded',
+      }
+    }),
+  }
+}
+
+async function selectAdminFinancialTransaction(transactionId: string) {
+  const data = await selectAdminFinancials()
+  return data.transactions.find((transaction) => transaction.id === transactionId) ?? null
+}
+
+async function selectAdminSetting<T>(settingsKey: string, fallback: T) {
+  const [setting] = await database
+    .select({ value: adminSettings.value })
+    .from(adminSettings)
+    .where(eq(adminSettings.settingsKey, settingsKey))
+    .limit(1)
+
+  return (setting?.value ?? fallback) as T
+}
+
+async function upsertAdminSetting(settingsKey: string, value: unknown) {
+  const [setting] = await database
+    .insert(adminSettings)
+    .values({ settingsKey, value })
+    .onConflictDoUpdate({
+      target: adminSettings.settingsKey,
+      set: { value, updatedAt: new Date() },
+    })
+    .returning({ value: adminSettings.value })
+
+  return setting.value
+}
+
+function defaultSalesSettings() {
+  return {
+    commissionTax: {
+      defaultCommissionAmount: 500,
+      influencerUplineReward: 100,
+      deductWithholdingTax: true,
+      taxDeductionRate: 0,
+    },
+    withdrawalSettings: {
+      minimumWithdrawal: 5000,
+      maximumPendingRequests: 1,
+      allowManualWithdrawalRequests: true,
+      requireAdminApproval: true,
+    },
+    referralRewards: {
+      customerReferralReward: 500,
+      influencerUplineReward: 100,
+      qualificationThreshold: 10,
+      autoNotifyQualifiedInfluencers: true,
+    },
+    payoutSettings: {
+      frequency: 'Weekly',
+      payoutTime: '17:00',
+      autoProcessApprovedPayouts: false,
+      holdSuspendedAgentPayouts: true,
+    },
+    taxationSettings: {
+      taxLabel: 'Withholding tax',
+      taxIdRequirementThreshold: 50000,
+      requireTaxIdBeforeLargePayouts: false,
+      showTaxBreakdownOnReceipt: true,
+    },
+  }
+}
+
+async function selectAdminFoodCombos() {
+  const comboStatusMap = await selectAdminSetting<Record<string, string>>('admin_combo_statuses', {})
+  const comboCategoryMap = await selectAdminSetting<Record<string, string>>('admin_combo_categories', {})
+  const [comboRows, restaurantRows] = await Promise.all([
+    database
+    .select({
+      id: combos.id,
+      name: combos.name,
+      description: combos.description,
+      imageUrl: combos.imageUrl,
+      priceAmount: combos.priceAmount,
+      isFeatured: combos.isFeatured,
+      isAvailable: combos.isAvailable,
+      createdAt: combos.createdAt,
+      restaurantId: restaurants.id,
+      restaurantName: restaurants.name,
+      platformCommissionBps: restaurants.platformCommissionBps,
+    })
+    .from(combos)
+    .innerJoin(restaurants, eq(combos.restaurantId, restaurants.id))
+    .orderBy(desc(combos.createdAt)),
+    database.select({ name: restaurants.name }).from(restaurants).orderBy(restaurants.name),
+  ])
+
+  const comboIds = comboRows.map((combo) => combo.id)
+  const [componentRows, orderItemRows] = await Promise.all([
+    comboIds.length
+      ? database
+          .select({
+            comboId: comboItems.comboId,
+            quantity: comboItems.quantity,
+            isOptional: comboItems.isOptional,
+            menuItemName: menuItems.name,
+            menuItemPrice: menuItems.priceAmount,
+          })
+          .from(comboItems)
+          .innerJoin(menuItems, eq(comboItems.menuItemId, menuItems.id))
+          .where(inArray(comboItems.comboId, comboIds))
+      : [],
+    comboIds.length
+      ? database.select().from(orderItems).where(inArray(orderItems.comboId, comboIds))
+      : [],
+  ])
+  const componentsByComboId = groupBy(componentRows, (component) => component.comboId)
+  const orderItemsByComboId = groupBy(
+    orderItemRows.filter((item) => Boolean(item.comboId)),
+    (item) => item.comboId ?? 'unknown',
+  )
+  const comboList = comboRows.map((combo) => {
+    const orderItemsForCombo = orderItemsByComboId.get(combo.id) ?? []
+    const margin = calculateCommissionAmount(combo.priceAmount, combo.platformCommissionBps)
+
+    return {
+      id: combo.id,
+      name: combo.name,
+      restaurant: combo.restaurantName,
+      category: comboCategoryMap[combo.id] ?? combo.description ?? 'Combo',
+      image: combo.imageUrl ?? null,
+      price: combo.priceAmount,
+      margin,
+      orders: orderItemsForCombo.reduce((total, item) => total + item.quantity, 0),
+      rating: 0,
+      status: comboStatusMap[combo.id] ?? (combo.isAvailable ? 'active' : 'sold out'),
+      isFeatured: combo.isFeatured,
+      items: (componentsByComboId.get(combo.id) ?? []).map((item) => ({
+        name: item.menuItemName,
+        quantity: `${item.quantity} portion${item.quantity === 1 ? '' : 's'}`,
+        extraPrice: item.menuItemPrice,
+        isOptional: item.isOptional,
+      })),
+    }
+  })
+
+  return {
+    stats: {
+      total: comboList.length,
+      active: comboList.filter((combo) => combo.status === 'active').length,
+      inactive: comboList.filter((combo) => combo.status !== 'active' && combo.status !== 'sold out').length,
+      outOfStock: comboList.filter((combo) => combo.status === 'sold out').length,
+      totalOrdersThisWeek: comboList.reduce((total, combo) => total + combo.orders, 0),
+    },
+    combos: comboList,
+    restaurants: restaurantRows.map((restaurant) => restaurant.name),
+  }
+}
+
+async function selectAdminFoodComboDetail(comboId: string) {
+  const data = await selectAdminFoodCombos()
+  return data.combos.find((combo) => combo.id === comboId) ?? null
+}
+
+async function createAdminFoodCombo(input: z.infer<typeof adminComboBodySchema>) {
+  const [restaurant] = await database
+    .select({
+      id: restaurants.id,
+      platformCommissionBps: restaurants.platformCommissionBps,
+    })
+    .from(restaurants)
+    .where(sql`lower(${restaurants.name}) = ${input.restaurant.toLowerCase()}`)
+    .limit(1)
+
+  if (!restaurant) {
+    throw new Error('Restaurant not found for combo.')
+  }
+
+  const slug = await createUniqueComboSlug(restaurant.id, input.name)
+  const [combo] = await database
+    .insert(combos)
+    .values({
+      restaurantId: restaurant.id,
+      slug,
+      name: input.name,
+      description: input.description || input.category,
+      priceAmount: input.price,
+      imageUrl: input.imageUrl || null,
+      isFeatured: input.isFeatured,
+      isAvailable: input.status === 'active',
+    })
+    .returning({ id: combos.id })
+
+  await upsertComboItems(combo.id, restaurant.id, input.items)
+  await setAdminComboStatus(combo.id, input.status)
+  await setAdminComboCategory(combo.id, input.category || input.description || 'Combo')
+  return selectAdminFoodComboDetail(combo.id)
+}
+
+async function updateAdminFoodCombo(
+  comboId: string,
+  input: z.infer<typeof adminComboUpdateBodySchema>,
+) {
+  const [existingCombo] = await database.select().from(combos).where(eq(combos.id, comboId)).limit(1)
+  if (!existingCombo) return null
+
+  let restaurantId = existingCombo.restaurantId
+  if (input.restaurant) {
+    const [restaurant] = await database
+      .select({ id: restaurants.id })
+      .from(restaurants)
+      .where(sql`lower(${restaurants.name}) = ${input.restaurant.toLowerCase()}`)
+      .limit(1)
+    if (restaurant) restaurantId = restaurant.id
+  }
+
+  await database
+    .update(combos)
+    .set({
+      restaurantId,
+      name: input.name,
+      slug: input.name ? await createUniqueComboSlug(restaurantId, input.name, comboId) : undefined,
+      description: input.description ?? input.category,
+      priceAmount: input.price,
+      imageUrl: input.imageUrl,
+      isFeatured: input.isFeatured,
+      isAvailable: input.status ? input.status === 'active' : undefined,
+      updatedAt: new Date(),
+    })
+    .where(eq(combos.id, comboId))
+
+  if (input.items?.length) {
+    await database.delete(comboItems).where(eq(comboItems.comboId, comboId))
+    await upsertComboItems(comboId, restaurantId, input.items)
+  }
+
+  if (input.status) await setAdminComboStatus(comboId, input.status)
+  if (input.category || input.description) await setAdminComboCategory(comboId, input.category ?? input.description ?? 'Combo')
+  return selectAdminFoodComboDetail(comboId)
+}
+
+async function upsertComboItems(
+  comboId: string,
+  restaurantId: string,
+  items: z.infer<typeof adminComboItemBodySchema>[],
+) {
+  for (const item of items) {
+    const [existingItem] = await database
+      .select({ id: menuItems.id })
+      .from(menuItems)
+      .where(
+        and(
+          eq(menuItems.restaurantId, restaurantId),
+          sql`lower(${menuItems.name}) = ${item.name.toLowerCase()}`,
+        ),
+      )
+      .limit(1)
+
+    const menuItemId = existingItem?.id ?? (
+      await database
+        .insert(menuItems)
+        .values({
+          restaurantId,
+          name: item.name,
+          priceAmount: item.extraPrice,
+          isAvailable: true,
+        })
+        .returning({ id: menuItems.id })
+    )[0].id
+
+    await database.insert(comboItems).values({
+      comboId,
+      menuItemId,
+      quantity: item.quantity,
+      isOptional: false,
+    })
+  }
+}
+
+async function setAdminComboStatus(comboId: string, status: string) {
+  const statusMap = await selectAdminSetting<Record<string, string>>('admin_combo_statuses', {})
+  await upsertAdminSetting('admin_combo_statuses', {
+    ...statusMap,
+    [comboId]: status,
+  })
+}
+
+async function setAdminComboCategory(comboId: string, category: string) {
+  const categoryMap = await selectAdminSetting<Record<string, string>>('admin_combo_categories', {})
+  await upsertAdminSetting('admin_combo_categories', {
+    ...categoryMap,
+    [comboId]: category,
+  })
+}
+
+async function createUniqueComboSlug(restaurantId: string, name: string, ignoreComboId?: string) {
+  const base = slugify(name)
+  const [existing] = await database
+    .select({ id: combos.id })
+    .from(combos)
+    .where(and(eq(combos.restaurantId, restaurantId), eq(combos.slug, base)))
+    .limit(1)
+
+  if (!existing || existing.id === ignoreComboId) return base
+  return `${base}-${Date.now().toString(36).slice(-5)}`
+}
+
+async function selectAdminSalesAgents() {
+  const agentRows = await database
+    .select({
+      id: users.id,
+      email: users.email,
+      userStatus: users.status,
+      createdAt: users.createdAt,
+      fullName: profiles.fullName,
+      phone: profiles.phone,
+      agentCode: salesAgentProfiles.agentCode,
+      referralCode: salesAgentProfiles.referralCode,
+      uplineSalesAgentId: salesAgentProfiles.uplineSalesAgentId,
+      status: salesAgentProfiles.status,
+      tier: salesAgentProfiles.tier,
+    })
+    .from(salesAgentProfiles)
+    .innerJoin(users, eq(salesAgentProfiles.userId, users.id))
+    .innerJoin(profiles, eq(salesAgentProfiles.userId, profiles.userId))
+    .orderBy(desc(users.createdAt))
+
+  const agentIds = agentRows.map((agent) => agent.id)
+  const [referralRows, commissionRows] = await Promise.all([
+    agentIds.length
+      ? database.select().from(referrals).where(inArray(referrals.salesAgentId, agentIds))
+      : [],
+    agentIds.length
+      ? database.select().from(commissions).where(inArray(commissions.salesAgentId, agentIds))
+      : [],
+  ])
+  const referralsByAgentId = groupBy(referralRows, (referral) => referral.salesAgentId)
+  const commissionsByAgentId = groupBy(commissionRows, (commission) => commission.salesAgentId)
+  const agentNameById = new Map(agentRows.map((agent) => [agent.id, agent.fullName]))
+
+  const agents = agentRows.map((agent) => {
+    const agentReferrals = referralsByAgentId.get(agent.id) ?? []
+    const agentCommissions = commissionsByAgentId.get(agent.id) ?? []
+    const successfulOrders = agentCommissions.filter((commission) =>
+      ['earned', 'approved', 'paid'].includes(commission.status),
+    ).length
+
+    return {
+      id: agent.id,
+      name: agent.fullName,
+      initials: initialsFromName(agent.fullName),
+      email: agent.email,
+      phone: agent.phone ?? 'No phone',
+      status: mapAdminSalesAgentStatus(agent.status, agent.tier, agent.userStatus),
+      type: agent.tier === 'influencer' ? 'Influencer' : 'Agent',
+      area: 'All service areas',
+      downlines: agentReferrals.length,
+      successfulOrders,
+      avgTransactions: agentReferrals.length
+        ? Math.round(successfulOrders / Math.max(agentReferrals.length, 1))
+        : successfulOrders,
+      commissionRate: agentCommissions.length
+        ? Number((agentCommissions[0].rateBps / 100).toFixed(2))
+        : 0,
+      referrals: agentReferrals.length,
+      revenue: agentCommissions.reduce((total, commission) => total + commission.eligibleAmount, 0),
+      commission: agentCommissions.reduce((total, commission) => total + commission.commissionAmount, 0),
+      upline: agent.uplineSalesAgentId
+        ? agentNameById.get(agent.uplineSalesAgentId) ?? 'External upline'
+        : 'None',
+      joined: agent.createdAt,
+      comboClicks: agentReferrals.length,
+      conversionRate: agentReferrals.length ? Math.round((successfulOrders / agentReferrals.length) * 100) : 0,
+      agentCode: agent.agentCode,
+      referralCode: agent.referralCode,
+    }
+  })
+
+  return {
+    stats: {
+      totalAgents: agents.length,
+      activeThisWeek: agents.filter((agent) => agent.status === 'active' || agent.status === 'influencer').length,
+      totalReferrals: agents.reduce((total, agent) => total + agent.referrals, 0),
+      influencers: agents.filter((agent) => agent.status === 'influencer').length,
+      pendingApprovals: agents.filter((agent) => agent.status === 'pending').length,
+      totalRevenue: agents.reduce((total, agent) => total + agent.revenue, 0),
+      totalCommission: agents.reduce((total, agent) => total + agent.commission, 0),
+    },
+    agents,
+  }
+}
+
+async function selectAdminSalesAgentDetail(agentId: string) {
+  const data = await selectAdminSalesAgents()
+  return data.agents.find((agent) => agent.id === agentId) ?? null
+}
+
+async function createAdminSalesAgent(input: z.infer<typeof salesAgentBodySchema>) {
+  const fullName = `${input.firstName} ${input.lastName}`.trim()
+  const passwordHash = await hashPassword(createTemporaryPassword())
+  const agentCode = await createUniqueAgentCode(fullName)
+  const referralCode = input.referralCode || await createUniqueReferralCode(fullName)
+
+  const [user] = await database
+    .insert(users)
+    .values({
+      email: input.email,
+      passwordHash,
+      status: 'active',
+      emailVerifiedAt: new Date(),
+    })
+    .returning({ id: users.id })
+
+  await database.insert(profiles).values({
+    userId: user.id,
+    fullName,
+    phone: input.phone,
+  })
+
+  await database.insert(userRoles).values({
+    userId: user.id,
+    role: 'sales_agent',
+  })
+
+  await database.insert(salesAgentProfiles).values({
+    userId: user.id,
+    agentCode,
+    referralCode,
+    status: 'active',
+    tier: input.agentType.toLowerCase().includes('influencer') ? 'influencer' : 'standard',
+    commissionRateBps: 0,
+  })
+
+  if (input.bankName && input.accountNumber && input.accountName) {
+    await database.insert(payoutAccounts).values({
+      userId: user.id,
+      bankCode: input.bankName,
+      accountName: input.accountName,
+      accountNumberEncrypted: `admin-collected-${input.accountNumber.slice(-4)}`,
+      accountNumberLast4: input.accountNumber.slice(-4),
+      isVerified: true,
+    })
+  }
+
+  return selectAdminSalesAgentDetail(user.id)
+}
+
+async function updateAdminSalesAgent(
+  agentId: string,
+  input: z.infer<typeof salesAgentUpdateBodySchema>,
+) {
+  if (input.email || input.status) {
+    await database
+      .update(users)
+      .set({
+        email: input.email,
+        status: input.status,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, agentId))
+  }
+
+  if (input.fullName || input.phone) {
+    await database
+      .update(profiles)
+      .set({
+        fullName: input.fullName,
+        phone: input.phone,
+        updatedAt: new Date(),
+      })
+      .where(eq(profiles.userId, agentId))
+  }
+
+  if (input.agentCode || input.status || input.commissionRate !== undefined) {
+    await database
+      .update(salesAgentProfiles)
+      .set({
+        agentCode: input.agentCode,
+        status: input.status,
+        commissionRateBps:
+          input.commissionRate !== undefined
+            ? Math.round(input.commissionRate * 100)
+            : undefined,
+        updatedAt: new Date(),
+      })
+      .where(eq(salesAgentProfiles.userId, agentId))
+  }
+
+  return selectAdminSalesAgentDetail(agentId)
+}
+
+async function createUniqueAgentCode(name: string) {
+  const prefix = initialsFromName(name) || 'SA'
+  const code = `${prefix}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`
+  const [existing] = await database
+    .select({ userId: salesAgentProfiles.userId })
+    .from(salesAgentProfiles)
+    .where(eq(salesAgentProfiles.agentCode, code))
+    .limit(1)
+  return existing ? `${prefix}-${Date.now().toString(36).slice(-5).toUpperCase()}` : code
+}
+
+async function createUniqueReferralCode(name: string) {
+  const base = `${slugify(name).replace(/-/g, '').slice(0, 8)}${Math.random().toString(36).slice(2, 5)}`.toUpperCase()
+  const [existing] = await database
+    .select({ userId: salesAgentProfiles.userId })
+    .from(salesAgentProfiles)
+    .where(eq(salesAgentProfiles.referralCode, base))
+    .limit(1)
+  return existing ? `SA${Date.now().toString(36).slice(-6).toUpperCase()}` : base
+}
+
+async function selectAdminPromo() {
+  const orderRows = await database.select().from(orders)
+  const referralRows = await database.select().from(referrals)
+  const campaigns = await selectAdminSetting('promo_campaigns', defaultPromoCampaigns(orderRows, referralRows))
+  const couponRules = await selectAdminSetting(
+    'promo_coupon_rules',
+    'Coupon is valid for one customer account only.\nCoupon cannot be combined with another active promo.\nMando may pause a coupon when abuse is detected.',
+  )
+
+  return {
+    stats: {
+      campaigns: campaigns.length,
+      activePromos: campaigns.filter((campaign) => campaign.status === 'active').length,
+      redemptions: campaigns.reduce((total, campaign) => total + campaign.redemptions, 0),
+      promoRevenue: campaigns.reduce((total, campaign) => total + campaign.revenue, 0),
+    },
+    campaigns,
+    couponRules,
+    coupons: [
+      { code: 'MANDO300', usage: campaigns[1]?.redemptions ?? 0, limit: 200, status: 'active' },
+      { code: 'FIRSTDELIVERY', usage: referralRows.length, limit: 500, status: 'active' },
+      { code: 'WEEKEND20', usage: 0, limit: 100, status: 'scheduled' },
+    ],
+  }
+}
+
+function defaultPromoCampaigns(
+  orderRows: (typeof orders.$inferSelect)[],
+  referralRows: (typeof referrals.$inferSelect)[],
+) {
+  return [
+    {
+      id: 'promo-first-order',
+      name: 'First Order Boost',
+      imageUrl: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=900&q=80',
+      channel: 'Referral links',
+      audience: 'New customers',
+      budget: 80000,
+      redemptions: referralRows.length,
+      revenue: orderRows
+        .filter((order) => order.status !== 'cancelled')
+        .reduce((total, order) => total + order.totalAmount, 0),
+      status: 'active',
+      startsAt: '2026-07-01',
+      endsAt: '2026-07-31',
+      offer: 'Reward first-time customer acquisition',
+      campaignType: 'Referral',
+      targetLocation: 'All service areas',
+    },
+    {
+      id: 'promo-local-lunch',
+      name: 'Local Lunch Push',
+      imageUrl: 'https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=900&q=80',
+      channel: 'In-app banner',
+      audience: 'Lunch buyers',
+      budget: 40000,
+      redemptions: Math.max(0, Math.floor(orderRows.length / 2)),
+      revenue: orderRows.slice(0, 10).reduce((total, order) => total + order.totalAmount, 0),
+      status: 'active',
+      startsAt: '2026-07-12',
+      endsAt: '2026-07-18',
+      offer: 'Push lunchtime combo discovery',
+      campaignType: 'Discount',
+      targetLocation: 'Fashina',
+    },
+    {
+      id: 'promo-weekend',
+      name: 'Weekend Combo Drive',
+      imageUrl: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=900&q=80',
+      channel: 'Push notification',
+      audience: 'Repeat customers',
+      budget: 25000,
+      redemptions: 0,
+      revenue: 0,
+      status: 'scheduled',
+      startsAt: '2026-07-18',
+      endsAt: '2026-07-20',
+      offer: 'Bundle discount',
+      campaignType: 'Flash sale',
+      targetLocation: 'All service areas',
+    },
+  ]
+}
+
+async function saveAdminPromoCampaign(input: Partial<z.infer<typeof promoCampaignBodySchema>> & { id?: string }) {
+  const promo = await selectAdminPromo()
+  const campaigns = promo.campaigns
+  const campaignId = input.id ?? `promo-${slugify(input.name ?? 'campaign')}-${Date.now().toString(36)}`
+  const existing = campaigns.find((campaign) => campaign.id === campaignId)
+  const campaign = {
+    ...(existing ?? {
+      redemptions: 0,
+      revenue: 0,
+      imageUrl: null,
+      campaignType: input.campaignType ?? 'Discount',
+      targetLocation: input.targetLocation ?? 'All service areas',
+    }),
+    ...input,
+    id: campaignId,
+  }
+
+  const nextCampaigns = existing
+    ? campaigns.map((item) => (item.id === campaignId ? campaign : item))
+    : [campaign, ...campaigns]
+
+  await upsertAdminSetting('promo_campaigns', nextCampaigns)
+  return campaign
+}
+
 async function selectAdminRiders() {
   const riderRows = await database
     .select({
@@ -1809,7 +2894,7 @@ function slugify(value: string) {
 }
 
 function createTemporaryPassword() {
-  return `Mando-${Math.random().toString(36).slice(2, 8)}-${Date.now().toString(36)}`
+  return 'Password123!'
 }
 
 function buildVendorStats(vendorRows: Awaited<ReturnType<typeof selectAdminVendors>>) {
@@ -1828,6 +2913,24 @@ function buildRiderStats(riderRows: Awaited<ReturnType<typeof selectAdminRiders>
     onDelivery: riderRows.filter((rider) => rider.status === 'on delivery').length,
     offline: riderRows.filter((rider) => rider.status === 'offline').length,
     suspended: riderRows.filter((rider) => rider.status === 'suspended').length,
+  }
+}
+
+function buildPayoutQueueItem(
+  label: string,
+  requestRows: (typeof payoutRequests.$inferSelect)[],
+  type: (typeof payoutRequests.$inferSelect)['type'],
+) {
+  const matchingRequests = requestRows.filter(
+    (request) =>
+      request.type === type &&
+      ['pending', 'under_review', 'processing'].includes(request.status),
+  )
+
+  return {
+    label,
+    value: matchingRequests.length,
+    amount: matchingRequests.reduce((total, request) => total + request.amount, 0),
   }
 }
 
@@ -1867,6 +2970,52 @@ function mapVendorStatus(status: (typeof restaurants.$inferSelect)['status']) {
   if (status === 'paused') return 'suspended'
   if (status === 'archived') return 'inactive'
   return 'pending approval'
+}
+
+function mapLedgerStatus(status: (typeof orders.$inferSelect)['status']) {
+  if (status === 'delivered') return 'settled'
+  if (status === 'cancelled' || status === 'refunded') return 'failed'
+  if (status === 'admin_review' || status === 'restaurant_rejected') return 'held'
+  return 'pending'
+}
+
+function mapPayoutLedgerStatus(status: (typeof payoutRequests.$inferSelect)['status']) {
+  if (status === 'approved' || status === 'paid') return 'settled'
+  if (status === 'rejected' || status === 'cancelled') return 'failed'
+  if (status === 'under_review' || status === 'processing') return 'held'
+  return 'pending'
+}
+
+function mapFinancialTransactionStatus(
+  paymentStatus: (typeof payments.$inferSelect)['status'] | undefined,
+  orderStatus: (typeof orders.$inferSelect)['status'],
+) {
+  if (paymentStatus === 'refunded' || orderStatus === 'refunded') return 'refunded'
+  if (paymentStatus === 'failed' || paymentStatus === 'cancelled' || orderStatus === 'cancelled') {
+    return 'failed'
+  }
+  if (paymentStatus === 'verified') return 'successful'
+  if (paymentStatus === 'submitted') return 'processing'
+  return 'pending'
+}
+
+function formatPaymentMethod(method: (typeof payments.$inferSelect)['method'] | null) {
+  if (!method) return 'Not recorded'
+  if (method === 'bank_transfer') return 'Bank transfer'
+  return method.toUpperCase()
+}
+
+function mapAdminSalesAgentStatus(
+  status: (typeof salesAgentProfiles.$inferSelect)['status'],
+  tier: string,
+  userStatus: (typeof users.$inferSelect)['status'],
+) {
+  if (userStatus === 'suspended' || userStatus === 'disabled' || status === 'suspended') {
+    return 'suspended'
+  }
+  if (status === 'pending') return 'pending'
+  if (tier === 'influencer') return 'influencer'
+  return 'active'
 }
 
 function mapRiderStatus(
@@ -1994,6 +3143,10 @@ async function selectAdminOrders(limit: number, orderId?: string) {
       id: orders.id,
       orderNumber: orders.orderNumber,
       status: orders.status,
+      subtotalAmount: orders.subtotalAmount,
+      deliveryFeeAmount: orders.deliveryFeeAmount,
+      serviceChargeAmount: orders.serviceChargeAmount,
+      discountAmount: orders.discountAmount,
       totalAmount: orders.totalAmount,
       currency: orders.currency,
       deliveryPhone: orders.deliveryPhone,
@@ -2052,6 +3205,10 @@ async function selectAdminOrders(limit: number, orderId?: string) {
       id: order.id,
       orderNumber: order.orderNumber,
       status: order.status,
+      subtotalAmount: order.subtotalAmount,
+      deliveryFeeAmount: order.deliveryFeeAmount,
+      serviceChargeAmount: order.serviceChargeAmount,
+      discountAmount: order.discountAmount,
       totalAmount: order.totalAmount,
       currency: order.currency,
       placedAt: order.placedAt ?? order.createdAt,

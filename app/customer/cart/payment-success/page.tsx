@@ -92,6 +92,21 @@ export default function PaymentSuccessPage() {
             <p className="font-semibold mt-2">{eta}</p>
           </div>
         </div>
+        {queryOrderId ? (
+          <Link
+            href={`/customer/orders/${queryOrderId}`}
+            className="inline-flex w-full justify-center rounded-2xl bg-[#141B34] px-5 py-4 text-sm font-semibold text-white"
+          >
+            View and track order
+          </Link>
+        ) : (
+          <Link
+            href="/customer/orders"
+            className="inline-flex w-full justify-center rounded-2xl bg-[#141B34] px-5 py-4 text-sm font-semibold text-white"
+          >
+            View my orders
+          </Link>
+        )}
       </div>
     </div>
   );
