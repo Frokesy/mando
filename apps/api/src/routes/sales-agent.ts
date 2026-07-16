@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import { randomBytes } from 'node:crypto'
-import { and, desc, eq, inArray } from 'drizzle-orm'
+import { and, desc, eq, inArray, sql } from 'drizzle-orm'
 import { z } from 'zod'
 
 import { getCurrentSessionContext } from '../auth/current-session.js'
@@ -80,28 +80,68 @@ export async function salesAgentRoutes(app: FastifyInstance) {
       }
 
       const result = await database.transaction(async (tx) => {
-        const [createdUser] = await tx
-          .insert(users)
-          .values({
-            email,
-            passwordHash: await hashPassword(password),
-          })
-          .returning({
+        const [existingUser] = await tx
+          .select({
             id: users.id,
             email: users.email,
+            passwordHash: users.passwordHash,
             status: users.status,
             createdAt: users.createdAt,
           })
+          .from(users)
+          .where(sql`lower(${users.email}) = ${email}`)
+          .limit(1)
 
-        await tx.insert(profiles).values({
-          userId: createdUser.id,
-          fullName,
-        })
+        const createdUser = existingUser ?? (
+          await tx
+            .insert(users)
+            .values({
+              email,
+              passwordHash: await hashPassword(password),
+            })
+            .returning({
+              id: users.id,
+              email: users.email,
+              passwordHash: users.passwordHash,
+              status: users.status,
+              createdAt: users.createdAt,
+            })
+        )[0]
 
-        await tx.insert(userRoles).values({
-          userId: createdUser.id,
-          role: 'sales_agent',
-        })
+        if (!createdUser) throw new Error('User creation failed.')
+        if (existingUser && !(await verifyPassword(password, existingUser.passwordHash))) {
+          throw new ExistingEmailPasswordMismatchError()
+        }
+
+        const [existingAgentProfile] = await tx
+          .select({ userId: salesAgentProfiles.userId })
+          .from(salesAgentProfiles)
+          .where(eq(salesAgentProfiles.userId, createdUser.id))
+          .limit(1)
+
+        if (existingAgentProfile) throw new ExistingSalesAgentRoleError()
+
+        await tx
+          .insert(profiles)
+          .values({
+            userId: createdUser.id,
+            fullName,
+          })
+          .onConflictDoUpdate({
+            target: profiles.userId,
+            set: {
+              fullName,
+              updatedAt: new Date(),
+            },
+          })
+
+        await tx
+          .insert(userRoles)
+          .values({
+            userId: createdUser.id,
+            role: 'sales_agent',
+          })
+          .onConflictDoNothing()
 
         const agentCode = await generateUniqueAgentCode(tx)
         const newReferralCode = await generateUniqueReferralCode(tx)
@@ -140,6 +180,20 @@ export async function salesAgentRoutes(app: FastifyInstance) {
 
       return reply.status(201).send(result)
     } catch (error) {
+      if (error instanceof ExistingEmailPasswordMismatchError) {
+        return reply.status(409).send({
+          error: 'email_password_mismatch',
+          message: 'This email already exists. Enter the existing account password to add the sales agent role.',
+        })
+      }
+
+      if (error instanceof ExistingSalesAgentRoleError) {
+        return reply.status(409).send({
+          error: 'sales_agent_role_exists',
+          message: 'This account already has a sales agent profile.',
+        })
+      }
+
       if (isUniqueViolation(error)) {
         return reply.status(409).send({
           error: 'email_already_exists',
@@ -813,3 +867,7 @@ function sendUnauthenticated(reply: FastifyReply) {
       message: 'Please log in to continue.',
     })
 }
+
+class ExistingEmailPasswordMismatchError extends Error {}
+
+class ExistingSalesAgentRoleError extends Error {}

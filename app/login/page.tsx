@@ -11,6 +11,14 @@ import { useToastStore } from "@/store/toastStore";
 const API_BASE_URL =
   (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000").replace(/\/+$/, "");
 
+const roleDestinations: Record<string, { label: string; href: string }> = {
+  customer: { label: "Customer", href: "/customer/dashboard" },
+  rider: { label: "Rider", href: "/rider/dashboard" },
+  sales_agent: { label: "Sales agent", href: "/sales-agent/dashboard" },
+  restaurant: { label: "Restaurant", href: "/restaurant/dashboard" },
+  admin: { label: "Admin", href: "/admin/dashboard/overview" },
+};
+
 export default function Login() {
   const router = useRouter();
   const setAuth = useAuthStore((s) => s.setAuth);
@@ -25,6 +33,7 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [forgotPasswordMode, setForgotPasswordMode] = useState(false);
+  const [roleOptions, setRoleOptions] = useState<string[]>([]);
 
   const setFieldError = (field: string, msg: string) => {
     setFieldErrors((prev) => ({ ...prev, [field]: msg }));
@@ -114,15 +123,21 @@ export default function Login() {
         throw new Error(result?.message ?? "Login failed. Please try again.");
       }
 
-      const freshAuth = await fetchCurrentUser("customer");
+      const freshAuth = await fetchCurrentUser();
 
       if (!freshAuth) {
         throw new Error("Login succeeded, but your session could not be confirmed. Please try again.");
       }
 
       showToast("Logged in successfully", "success");
-      await new Promise((resolve) => window.setTimeout(resolve, 1200));
-      router.push("/customer/dashboard");
+      if (freshAuth.roles.length > 1) {
+        setRoleOptions(freshAuth.roles);
+        return;
+      }
+
+      const destination = roleDestinations[freshAuth.roles[0]]?.href ?? "/customer/dashboard";
+      await new Promise((resolve) => window.setTimeout(resolve, 700));
+      router.push(destination);
     } catch (err) {
       const message =
         err instanceof Error
@@ -245,6 +260,30 @@ export default function Login() {
             </Link>
           </p>
         </div>
+        {roleOptions.length > 1 ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-5 backdrop-blur-sm">
+            <div className="w-full max-w-sm rounded-3xl bg-white p-5 shadow-2xl">
+              <h2 className="text-lg font-semibold text-[#141B34]">Choose dashboard</h2>
+              <p className="mt-2 text-sm text-[#6B6B6B]">This account has multiple roles. Continue as:</p>
+              <div className="mt-5 grid gap-3">
+                {roleOptions.map((role) => {
+                  const option = roleDestinations[role] ?? { label: role, href: "/customer/dashboard" };
+                  return (
+                    <button
+                      key={role}
+                      type="button"
+                      onClick={() => router.push(option.href)}
+                      className="flex items-center justify-between rounded-2xl border border-gray-200 bg-[#FAFAFA] px-4 py-3 text-left text-sm font-semibold text-[#141B34] hover:border-[#DFB400] hover:bg-[#FFF9DA]"
+                    >
+                      <span>{option.label}</span>
+                      <span className="text-[#DFB400]">Open</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     </motion.div>
   );

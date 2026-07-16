@@ -405,6 +405,26 @@ export const riderVehicles = pgTable(
   ],
 )
 
+export const riderServiceAreas = pgTable(
+  'rider_service_areas',
+  {
+    riderId: uuid('rider_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    serviceAreaId: uuid('service_area_id')
+      .notNull()
+      .references(() => serviceAreas.id, { onDelete: 'cascade' }),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    primaryKey({
+      name: 'rider_service_areas_rider_id_service_area_id_pk',
+      columns: [table.riderId, table.serviceAreaId],
+    }),
+    index('rider_service_areas_service_area_id_index').on(table.serviceAreaId),
+  ],
+)
+
 export const riderDocuments = pgTable(
   'rider_documents',
   {

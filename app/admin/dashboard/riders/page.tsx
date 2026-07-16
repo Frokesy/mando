@@ -100,6 +100,7 @@ export default function AdminRidersPage() {
   const [loading, setLoading] = useState(true);
   const [selectedRider, setSelectedRider] = useState<Rider | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [assigningRider, setAssigningRider] = useState<Rider | null>(null);
   const [updatingRiderId, setUpdatingRiderId] = useState<string | null>(null);
   const [filters, setFilters] = useState({
     status: "All",
@@ -181,22 +182,24 @@ export default function AdminRidersPage() {
     }
   }
 
-  async function assignZone(rider: Rider) {
-    const serviceArea = window.prompt("Assign rider to service area", rider.location);
-    if (!serviceArea?.trim()) return;
-
+  async function assignZone(rider: Rider, serviceAreas: string[]) {
+    if (!serviceAreas.length) {
+      showToast("Choose at least one service area", "error");
+      return;
+    }
     setUpdatingRiderId(rider.id);
     try {
       const response = await fetch(`${API_BASE_URL}/admin/riders/${rider.id}/zone`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ serviceArea: serviceArea.trim() }),
+        body: JSON.stringify({ serviceArea: serviceAreas.join(", ") }),
       });
       if (!response.ok) throw new Error("Unable to assign rider zone");
 
       const payload = (await response.json()) as { rider: Rider };
       setSelectedRider(payload.rider);
+      setAssigningRider(null);
       await loadRiders();
       showToast("Rider zone updated", "success");
     } catch (error) {
@@ -327,7 +330,7 @@ export default function AdminRidersPage() {
             </PanelSection>
 
             <div className="mt-5 grid grid-cols-2 gap-3">
-              <button disabled={updatingRiderId === selectedRider.id} onClick={() => assignZone(selectedRider)} className="rounded-lg bg-[#FE9A00] px-3 py-2 text-[11px] font-semibold text-white disabled:opacity-60">Assign Zone</button>
+              <button disabled={updatingRiderId === selectedRider.id} onClick={() => setAssigningRider(selectedRider)} className="rounded-lg bg-[#FE9A00] px-3 py-2 text-[11px] font-semibold text-white disabled:opacity-60">Assign Zone</button>
               <button disabled={updatingRiderId === selectedRider.id} onClick={() => updateRiderStatus(selectedRider)} className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-semibold text-red-600 disabled:opacity-60">
                 {selectedRider.status === "suspended" ? "Reactivate" : "Suspend"}
               </button>
@@ -347,6 +350,15 @@ export default function AdminRidersPage() {
           }}
         />
       ) : null}
+      {assigningRider ? (
+        <AssignZoneModal
+          rider={assigningRider}
+          serviceAreas={serviceAreaNames}
+          saving={updatingRiderId === assigningRider.id}
+          onClose={() => setAssigningRider(null)}
+          onSave={(areas) => void assignZone(assigningRider, areas)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -357,12 +369,12 @@ function AddRiderModal({ serviceAreas, onClose, onSaved }: { serviceAreas: strin
   const [saving, setSaving] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
   const [vehicleType, setVehicleType] = useState<VehicleType>("Motorcycle");
-  const [serviceArea, setServiceArea] = useState(serviceAreas[0] ?? "");
+  const [selectedServiceAreas, setSelectedServiceAreas] = useState<string[]>(serviceAreas[0] ? [serviceAreas[0]] : []);
   const steps = ["Personal info", "Vehicle & zone", "Documents", "Bank details"];
 
   useEffect(() => {
-    if (!serviceArea && serviceAreas[0]) setServiceArea(serviceAreas[0]);
-  }, [serviceArea, serviceAreas]);
+    if (!selectedServiceAreas.length && serviceAreas[0]) setSelectedServiceAreas([serviceAreas[0]]);
+  }, [selectedServiceAreas.length, serviceAreas]);
 
   async function submitRider(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -391,7 +403,7 @@ function AddRiderModal({ serviceAreas, onClose, onSaved }: { serviceAreas: strin
         plateNumber: String(formData.get("plateNumber") ?? ""),
         vehicleColor: String(formData.get("vehicleColor") ?? ""),
         vehicleModel: String(formData.get("vehicleModel") ?? ""),
-        serviceArea,
+        serviceArea: selectedServiceAreas.join(", "),
         governmentIdUrl,
         vehicleLicenseUrl,
         proofOfAddressUrl,
@@ -438,7 +450,7 @@ function AddRiderModal({ serviceAreas, onClose, onSaved }: { serviceAreas: strin
 
         <div className="mt-5">
           <div className={step === 1 ? "block" : "hidden"}><PersonalInfoStep /></div>
-          <div className={step === 2 ? "block" : "hidden"}><VehicleZoneStep serviceAreas={serviceAreas} serviceArea={serviceArea} vehicleType={vehicleType} onServiceAreaChange={setServiceArea} onVehicleTypeChange={setVehicleType} /></div>
+          <div className={step === 2 ? "block" : "hidden"}><VehicleZoneStep serviceAreas={serviceAreas} selectedServiceAreas={selectedServiceAreas} vehicleType={vehicleType} onServiceAreaToggle={(area) => setSelectedServiceAreas((current) => current.includes(area) ? current.filter((item) => item !== area) : [...current, area])} onVehicleTypeChange={setVehicleType} /></div>
           <div className={step === 3 ? "block" : "hidden"}><DocumentsStep progress={uploadProgress} /></div>
           <div className={step === 4 ? "block" : "hidden"}><BankDetailsStep /></div>
         </div>
@@ -469,15 +481,15 @@ function PersonalInfoStep() {
 
 function VehicleZoneStep({
   serviceAreas,
-  serviceArea,
+  selectedServiceAreas,
   vehicleType,
-  onServiceAreaChange,
+  onServiceAreaToggle,
   onVehicleTypeChange,
 }: {
   serviceAreas: string[];
-  serviceArea: string;
+  selectedServiceAreas: string[];
   vehicleType: VehicleType;
-  onServiceAreaChange: (value: string) => void;
+  onServiceAreaToggle: (value: string) => void;
   onVehicleTypeChange: (value: VehicleType) => void;
 }) {
   return (
@@ -499,7 +511,7 @@ function VehicleZoneStep({
         <p className="text-[10px] font-semibold text-[#6A7282]">Assign zone</p>
         <div className="mt-2 flex flex-wrap gap-2">
           {serviceAreas.map((area, index) => (
-            <button type="button" key={area} onClick={() => onServiceAreaChange(area)} className={`rounded-full px-3 py-2 text-[10px] font-semibold ring-1 ${zoneStyles[index % zoneStyles.length]} ${serviceArea === area ? "shadow-sm outline outline-2 outline-offset-2 outline-[#FE9A00]" : ""}`}>
+            <button type="button" key={area} onClick={() => onServiceAreaToggle(area)} className={`rounded-full px-3 py-2 text-[10px] font-semibold ring-1 ${zoneStyles[index % zoneStyles.length]} ${selectedServiceAreas.includes(area) ? "shadow-sm outline outline-2 outline-offset-2 outline-[#FE9A00]" : ""}`}>
               <span className="mr-2 inline-flex h-2 w-2 rounded-full bg-current" />
               {area}
             </button>
@@ -538,6 +550,71 @@ function VehicleOption({ vehicle, selected, onSelect }: { vehicle: VehicleType; 
       <span className="text-4xl">{icon}</span>
       <span className="text-[#101828]">{vehicle}</span>
     </button>
+  );
+}
+
+function AssignZoneModal({
+  rider,
+  serviceAreas,
+  saving,
+  onClose,
+  onSave,
+}: {
+  rider: Rider;
+  serviceAreas: string[];
+  saving: boolean;
+  onClose: () => void;
+  onSave: (areas: string[]) => void;
+}) {
+  const initialAreas = rider.location
+    .split(",")
+    .map((area) => area.trim())
+    .filter(Boolean);
+  const [selectedAreas, setSelectedAreas] = useState<string[]>(initialAreas);
+
+  function toggleArea(area: string) {
+    setSelectedAreas((current) =>
+      current.includes(area)
+        ? current.filter((item) => item !== area)
+        : [...current, area],
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4 backdrop-blur-sm">
+      <div className="w-full max-w-xl rounded-2xl bg-white p-5 shadow-2xl">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-sm font-semibold text-[#101828]">Assign Rider Zones</h2>
+            <p className="mt-1 text-[11px] text-[#6A7282]">Choose one or more service areas for {rider.name}.</p>
+          </div>
+          <button type="button" onClick={onClose} disabled={saving} className="rounded-lg border border-gray-200 px-3 py-2 text-[10px] font-semibold text-[#6A7282] disabled:opacity-60">Close</button>
+        </div>
+
+        <div className="mt-5 grid grid-cols-2 gap-3">
+          {serviceAreas.map((area, index) => (
+            <button
+              type="button"
+              key={area}
+              onClick={() => toggleArea(area)}
+              disabled={saving}
+              className={`rounded-2xl p-4 text-left text-[11px] font-semibold ring-1 transition disabled:opacity-60 ${zoneStyles[index % zoneStyles.length]} ${selectedAreas.includes(area) ? "outline outline-2 outline-offset-2 outline-[#FE9A00]" : ""}`}
+            >
+              <span className="mb-3 inline-flex h-3 w-3 rounded-full bg-current" />
+              <span className="block text-[#101828]">{area}</span>
+              <span className="mt-1 block text-[10px] opacity-70">{selectedAreas.includes(area) ? "Selected" : "Tap to assign"}</span>
+            </button>
+          ))}
+        </div>
+
+        <div className="mt-6 flex items-center justify-between border-t border-gray-100 pt-4">
+          <button type="button" onClick={onClose} disabled={saving} className="rounded-lg border border-gray-200 px-4 py-2 text-[11px] font-semibold text-[#6A7282] disabled:opacity-60">Cancel</button>
+          <button type="button" onClick={() => onSave(selectedAreas)} disabled={saving} className="rounded-lg bg-[#FE9A00] px-4 py-2 text-[11px] font-semibold text-white disabled:opacity-60">
+            {saving ? "Assigning..." : "Assign zones"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

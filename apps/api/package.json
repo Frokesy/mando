@@ -15,7 +15,8 @@
     "db:seed:catalog": "tsx src/db/seed-catalog.ts",
     "db:seed:test-staff": "tsx src/db/seed-test-staff.ts",
     "db:seed:test-downlines": "tsx src/db/seed-test-downlines.ts",
-    "db:seed:superadmin": "tsx src/db/seed-superadmin.ts"
+    "db:seed:superadmin": "tsx src/db/seed-superadmin.ts",
+    "db:seed:promo-combos": "tsx src/db/seed-promo-combos.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.0.0",

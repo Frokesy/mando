@@ -58,32 +58,61 @@ export async function authRoutes(app: FastifyInstance) {
 
     try {
       const signupResult = await database.transaction(async (tx) => {
-        const [createdUser] = await tx
-          .insert(users)
-          .values({
-            email,
-            passwordHash: await hashPassword(password),
-          })
-          .returning({
+        const [existingUser] = await tx
+          .select({
             id: users.id,
             email: users.email,
+            passwordHash: users.passwordHash,
             status: users.status,
             createdAt: users.createdAt,
           })
+          .from(users)
+          .where(sql`lower(${users.email}) = ${email}`)
+          .limit(1)
 
-        if (!createdUser) {
-          throw new Error('User creation failed.')
+        const createdUser = existingUser ?? (
+          await tx
+            .insert(users)
+            .values({
+              email,
+              passwordHash: await hashPassword(password),
+            })
+            .returning({
+              id: users.id,
+              email: users.email,
+              passwordHash: users.passwordHash,
+              status: users.status,
+              createdAt: users.createdAt,
+            })
+        )[0]
+
+        if (!createdUser) throw new Error('User creation failed.')
+
+        if (existingUser && !(await verifyPassword(password, existingUser.passwordHash))) {
+          throw new ExistingEmailPasswordMismatchError()
         }
 
-        await tx.insert(profiles).values({
-          userId: createdUser.id,
-          fullName,
-        })
+        await tx
+          .insert(profiles)
+          .values({
+            userId: createdUser.id,
+            fullName,
+          })
+          .onConflictDoUpdate({
+            target: profiles.userId,
+            set: {
+              fullName,
+              updatedAt: new Date(),
+            },
+          })
 
-        await tx.insert(userRoles).values({
-          userId: createdUser.id,
-          role: 'customer',
-        })
+        await tx
+          .insert(userRoles)
+          .values({
+            userId: createdUser.id,
+            role: 'customer',
+          })
+          .onConflictDoNothing()
 
         if (salesAgentId) {
           const [salesAgent] = await tx
@@ -118,7 +147,11 @@ export async function authRoutes(app: FastifyInstance) {
           profile: {
             fullName,
           },
-          roles: ['customer'],
+          roles: await tx
+            .select({ role: userRoles.role })
+            .from(userRoles)
+            .where(eq(userRoles.userId, createdUser.id))
+            .then((roles) => roles.map((role) => role.role)),
         }
       })
 
@@ -127,6 +160,13 @@ export async function authRoutes(app: FastifyInstance) {
         .header('Set-Cookie', serializeSessionCookie(session))
         .send(signupResult)
     } catch (error) {
+      if (error instanceof ExistingEmailPasswordMismatchError) {
+        return reply.status(409).send({
+          error: 'email_password_mismatch',
+          message: 'This email already exists. Enter the existing account password to add the customer role.',
+        })
+      }
+
       if (isUniqueViolation(error)) {
         return reply.status(409).send({
           error: 'email_already_exists',
@@ -322,3 +362,5 @@ function isUniqueViolation(error: unknown) {
 
   return false
 }
+
+class ExistingEmailPasswordMismatchError extends Error {}

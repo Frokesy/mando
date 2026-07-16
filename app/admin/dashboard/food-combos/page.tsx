@@ -32,6 +32,7 @@ type FoodCombosResponse = {
   };
   combos: Combo[];
   restaurants: string[];
+  menuItemsByRestaurant: Record<string, string[]>;
 };
 
 type CloudinarySignatureResponse = {
@@ -58,6 +59,7 @@ const emptyData: FoodCombosResponse = {
   stats: { total: 0, active: 0, inactive: 0, outOfStock: 0, totalOrdersThisWeek: 0 },
   combos: [],
   restaurants: [],
+  menuItemsByRestaurant: {},
 };
 
 export default function AdminFoodCombosPage() {
@@ -193,17 +195,19 @@ export default function AdminFoodCombosPage() {
       </section>
 
       {notice ? <p className="fixed bottom-6 right-6 z-50 rounded-xl bg-[#101828] px-4 py-3 text-[11px] font-semibold text-white shadow-xl">{notice}</p> : null}
-      {comboModalMode ? <ComboModal mode={comboModalMode} combo={comboModalMode === "edit" ? selectedCombo : null} restaurants={data.restaurants} onClose={() => setComboModalMode(null)} onSaved={() => { setNotice(comboModalMode === "add" ? "Combo saved." : "Combo updated."); setComboModalMode(null); void loadCombos(); }} /> : null}
+      {comboModalMode ? <ComboModal mode={comboModalMode} combo={comboModalMode === "edit" ? selectedCombo : null} restaurants={data.restaurants} menuItemsByRestaurant={data.menuItemsByRestaurant} onClose={() => setComboModalMode(null)} onSaved={() => { setNotice(comboModalMode === "add" ? "Combo saved." : "Combo updated."); setComboModalMode(null); void loadCombos(); }} /> : null}
     </div>
   );
 }
 
-function ComboModal({ mode, combo, restaurants, onClose, onSaved }: { mode: "add" | "edit"; combo: Combo | null; restaurants: string[]; onClose: () => void; onSaved: () => void }) {
+function ComboModal({ mode, combo, restaurants, menuItemsByRestaurant, onClose, onSaved }: { mode: "add" | "edit"; combo: Combo | null; restaurants: string[]; menuItemsByRestaurant: Record<string, string[]>; onClose: () => void; onSaved: () => void }) {
   const [tab, setTab] = useState<"Basic info" | "Pricing" | "Availability" | "Items">("Basic info");
   const [saving, setSaving] = useState(false);
   const [progress, setProgress] = useState<UploadProgress | null>(null);
   const [error, setError] = useState("");
+  const [selectedRestaurant, setSelectedRestaurant] = useState(combo?.restaurant ?? restaurants[0] ?? "");
   const tabs = ["Basic info", "Pricing", "Availability", "Items"] as const;
+  const itemOptions = menuItemsByRestaurant[selectedRestaurant] ?? [];
 
   async function submit(formData: FormData) {
     setSaving(true);
@@ -211,7 +215,7 @@ function ComboModal({ mode, combo, restaurants, onClose, onSaved }: { mode: "add
     setError("");
     try {
       const imageUrl = await uploadAdminImage(getSelectedFile(formData, "comboImage"), "combo_image", setProgress);
-      const items = [0, 1, 2]
+      const items = [0, 1, 2, 3]
         .map((index) => ({
           name: String(formData.get(`itemName${index}`) ?? "").trim(),
           quantity: Number(formData.get(`itemQuantity${index}`) || 1),
@@ -264,10 +268,10 @@ function ComboModal({ mode, combo, restaurants, onClose, onSaved }: { mode: "add
           ))}
         </div>
 
-        <form action={submit} className="mt-5">
+        <form action={submit} noValidate className="mt-5">
           <div className={tab === "Basic info" ? "grid grid-cols-2 gap-4" : "hidden"}>
               <FormField name="name" label="Combo name" defaultValue={combo?.name ?? ""} placeholder="Jollof Rice & Chicken" />
-              <SelectField name="restaurant" label="Restaurant" options={restaurants.length ? restaurants : combo?.restaurant ? [combo.restaurant] : []} defaultValue={combo?.restaurant ?? restaurants[0] ?? ""} />
+              <SelectField name="restaurant" label="Restaurant" options={restaurants.length ? restaurants : combo?.restaurant ? [combo.restaurant] : []} value={selectedRestaurant} onChange={(event) => setSelectedRestaurant(event.currentTarget.value)} />
               <FormField name="category" label="Category" defaultValue={combo?.category ?? ""} placeholder="Rice, Local dish, Pasta" />
               <FormField name="description" label="Short description" defaultValue="" placeholder="What makes this combo special" />
               <div className="col-span-2">
@@ -289,11 +293,11 @@ function ComboModal({ mode, combo, restaurants, onClose, onSaved }: { mode: "add
               <FormField label="Service area" placeholder="All areas or specific area" />
           </div>
           <div className={tab === "Items" ? "space-y-3" : "hidden"}>
-              {["Main item", "Protein", "Side"].map((label) => (
+              {["Main item", "Protein", "Side", "Takeaway"].map((label, index) => (
                 <div key={label} className="grid grid-cols-[1fr_120px_120px] gap-3 rounded-xl bg-gray-50 p-3">
-                  <FormField name={`itemName${["Main item", "Protein", "Side"].indexOf(label)}`} label={label} defaultValue={combo?.items[["Main item", "Protein", "Side"].indexOf(label)]?.name ?? ""} placeholder="Select food item" />
-                  <FormField name={`itemQuantity${["Main item", "Protein", "Side"].indexOf(label)}`} label="Quantity" type="number" defaultValue="1" placeholder="2" />
-                  <FormField name={`itemPrice${["Main item", "Protein", "Side"].indexOf(label)}`} label="Extra price" type="number" defaultValue={String(combo?.items[["Main item", "Protein", "Side"].indexOf(label)]?.extraPrice ?? 0)} placeholder="0" />
+                  <SelectField name={`itemName${index}`} label={label} options={itemOptions.length ? itemOptions : combo?.items.map((item) => item.name) ?? []} defaultValue={label === "Takeaway" ? itemOptions.find((item) => item.toLowerCase().includes("takeaway")) ?? combo?.items[3]?.name ?? "" : combo?.items[index]?.name ?? ""} />
+                  <FormField name={`itemQuantity${index}`} label="Quantity" type="number" defaultValue={label === "Takeaway" ? "1" : "1"} placeholder="2" />
+                  <FormField name={`itemPrice${index}`} label="Extra price" type="number" defaultValue={String(combo?.items[index]?.extraPrice ?? 0)} placeholder="0" />
                 </div>
               ))}
           </div>
@@ -439,3 +443,5 @@ function StatusPill({ status }: { status: ComboStatus }) {
 function formatCurrency(amount: number) {
   return new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 0 }).format(amount);
 }
+
+

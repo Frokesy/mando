@@ -23,6 +23,7 @@ const repoRoot = path.resolve(
 
 const restaurantSlugs = [
   'mama-chef-cafe',
+  'mjay-lavish',
   'iya-ruka-kitchen',
   'spice-hub-grill',
   'mealstop-kitchen',
@@ -95,6 +96,58 @@ const seedRestaurants: SeedRestaurant[] = [
         items: [
           { key: 'jollof-rice', quantity: 2 },
           { key: 'fried-plantain', quantity: 1 },
+        ],
+      },
+    ],
+  },
+  {
+    slug: 'mjay-lavish',
+    name: 'Mjay Lavish',
+    description: 'Promo rice bowls and campus specials',
+    serviceAreaName: 'Fashina',
+    streetAddress: '9 Fashina Road',
+    prepMin: 20,
+    prepMax: 30,
+    imagePath: 'public/restaurant-dummy.png',
+    menuItems: [
+      { key: 'promo-jollof-rice', name: 'Promo Jollof Rice', description: 'One spoon of smoky promo jollof rice.', priceAmount: 650 },
+      { key: 'promo-fried-rice', name: 'Promo Fried Rice', description: 'One spoon of vegetable fried rice.', priceAmount: 700 },
+      { key: 'peppered-chicken', name: 'Peppered Chicken', description: 'One medium peppered chicken piece.', priceAmount: 1100 },
+      { key: 'jollof-spaghetti', name: 'Jollof Spaghetti', description: 'One portion of jollof spaghetti.', priceAmount: 800 },
+      { key: 'plantain-side', name: 'Plantain Side', description: 'One portion of fried plantain.', priceAmount: 450 },
+      { key: 'takeaway-pack', name: 'Takeaway Pack', description: 'One food packaging pack.', priceAmount: 150 },
+    ],
+    combos: [
+      {
+        slug: 'promo-rice-and-chicken',
+        name: 'Promo Rice + Chicken',
+        description: 'Two spoons of promo jollof rice with one peppered chicken and takeaway pack.',
+        isFeatured: true,
+        items: [
+          { key: 'promo-jollof-rice', quantity: 2 },
+          { key: 'peppered-chicken', quantity: 1 },
+          { key: 'takeaway-pack', quantity: 1 },
+        ],
+      },
+      {
+        slug: 'promo-spaghetti-and-plantain',
+        name: 'Promo Spaghetti + Plantain',
+        description: 'One portion of jollof spaghetti with plantain side and takeaway pack.',
+        isFeatured: true,
+        items: [
+          { key: 'jollof-spaghetti', quantity: 1 },
+          { key: 'plantain-side', quantity: 1 },
+          { key: 'takeaway-pack', quantity: 1 },
+        ],
+      },
+      {
+        slug: 'lavish-fried-rice-bowl',
+        name: 'Lavish Fried Rice Bowl',
+        description: 'Two spoons of fried rice with peppered chicken.',
+        isFeatured: false,
+        items: [
+          { key: 'promo-fried-rice', quantity: 2 },
+          { key: 'peppered-chicken', quantity: 1 },
         ],
       },
     ],

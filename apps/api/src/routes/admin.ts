@@ -156,6 +156,32 @@ const serviceChargesBodySchema = z.object({
   effectiveDate: z.string().trim().optional(),
 })
 
+const operationsDeliveryPricingBodySchema = z.object({
+  baseFeeAmount: z.coerce.number().int().nonnegative(),
+  feePerKmAmount: z.coerce.number().int().nonnegative(),
+  minimumFeeAmount: z.coerce.number().int().nonnegative(),
+  freeDeliveryThresholdAmount: z.coerce.number().int().nonnegative().optional(),
+  serviceAreaOverrides: z
+    .array(
+      z.object({
+        serviceAreaId: z.uuid(),
+        deliveryFeeAmount: z.coerce.number().int().nonnegative(),
+      }),
+    )
+    .default([]),
+})
+
+const serviceAreaParamsSchema = z.object({
+  serviceAreaId: z.uuid(),
+})
+
+const adminServiceAreaBodySchema = z.object({
+  name: z.string().trim().min(2).max(120),
+  city: z.string().trim().min(2).max(120),
+  state: z.string().trim().min(2).max(120),
+  isActive: z.boolean().optional(),
+})
+
 const transactionParamsSchema = z.object({
   transactionId: z.uuid(),
 })
@@ -1020,6 +1046,128 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.status(200).send({ settings })
   })
 
+  app.get('/operations/delivery-pricing', async (_request, reply) => {
+    return reply.status(200).send(await selectOperationsDeliveryPricing())
+  })
+
+  app.patch('/operations/delivery-pricing', async (request, reply) => {
+    const parsedBody = operationsDeliveryPricingBodySchema.safeParse(request.body)
+    if (!parsedBody.success) {
+      return reply.status(400).send({
+        error: 'validation_error',
+        message: 'Please provide valid delivery pricing settings.',
+      })
+    }
+
+    const settings = await upsertAdminSetting('operations_delivery_pricing', parsedBody.data)
+    return reply.status(200).send({ settings })
+  })
+
+  app.post('/operations/service-areas', async (request, reply) => {
+    const parsedBody = adminServiceAreaBodySchema.safeParse(request.body)
+    if (!parsedBody.success) {
+      return reply.status(400).send({
+        error: 'validation_error',
+        message: 'Please provide valid service area details.',
+      })
+    }
+
+    try {
+      const [serviceArea] = await database
+        .insert(serviceAreas)
+        .values({
+          name: parsedBody.data.name,
+          city: parsedBody.data.city,
+          state: parsedBody.data.state,
+          isActive: parsedBody.data.isActive ?? true,
+        })
+        .returning()
+
+      return reply.status(201).send({ serviceArea })
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        return reply.status(409).send({
+          error: 'service_area_exists',
+          message: 'A service area with this name, city and state already exists.',
+        })
+      }
+      throw error
+    }
+  })
+
+  app.patch('/operations/service-areas/:serviceAreaId', async (request, reply) => {
+    const parsedParams = serviceAreaParamsSchema.safeParse(request.params)
+    const parsedBody = adminServiceAreaBodySchema.partial().safeParse(request.body)
+    if (!parsedParams.success || !parsedBody.success) {
+      return reply.status(400).send({
+        error: 'validation_error',
+        message: 'Please provide valid service area details.',
+      })
+    }
+
+    try {
+      const [serviceArea] = await database
+        .update(serviceAreas)
+        .set({
+          ...parsedBody.data,
+          updatedAt: new Date(),
+        })
+        .where(eq(serviceAreas.id, parsedParams.data.serviceAreaId))
+        .returning()
+
+      if (!serviceArea) {
+        return reply.status(404).send({
+          error: 'service_area_not_found',
+          message: 'Service area not found.',
+        })
+      }
+
+      return reply.status(200).send({ serviceArea })
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        return reply.status(409).send({
+          error: 'service_area_exists',
+          message: 'A service area with this name, city and state already exists.',
+        })
+      }
+      throw error
+    }
+  })
+
+  app.delete('/operations/service-areas/:serviceAreaId', async (request, reply) => {
+    const parsedParams = serviceAreaParamsSchema.safeParse(request.params)
+    if (!parsedParams.success) {
+      return reply.status(400).send({
+        error: 'validation_error',
+        message: 'Please choose a valid service area.',
+      })
+    }
+
+    try {
+      const [serviceArea] = await database
+        .delete(serviceAreas)
+        .where(eq(serviceAreas.id, parsedParams.data.serviceAreaId))
+        .returning({ id: serviceAreas.id })
+
+      if (!serviceArea) {
+        return reply.status(404).send({
+          error: 'service_area_not_found',
+          message: 'Service area not found.',
+        })
+      }
+
+      return reply.status(200).send({ ok: true })
+    } catch (error) {
+      if (isForeignKeyViolation(error)) {
+        return reply.status(409).send({
+          error: 'service_area_in_use',
+          message: 'This service area is already used by restaurants, addresses, riders or orders. Deactivate it instead of deleting it.',
+        })
+      }
+      throw error
+    }
+  })
+
   app.post('/financials/transactions/:transactionId/refund', async (request, reply) => {
     const parsedParams = transactionParamsSchema.safeParse(request.params)
     if (!parsedParams.success) {
@@ -1579,40 +1727,12 @@ async function selectAdminVendorCommissions() {
 }
 
 async function createAdminVendor(input: z.infer<typeof vendorBodySchema>) {
-  const [existingUser] = await database
-    .select({ id: users.id })
-    .from(users)
-    .where(eq(users.email, input.email))
-    .limit(1)
-
-  if (existingUser) {
-    const error = new Error('Vendor owner email already exists')
-    ;(error as { code?: string }).code = '23505'
-    throw error
-  }
-
   const serviceArea = await ensureServiceArea(input.serviceArea)
-  const passwordHash = await hashPassword(createTemporaryPassword())
   const slug = await createUniqueRestaurantSlug(input.restaurantName)
-
-  const [user] = await database
-    .insert(users)
-    .values({
-      email: input.email,
-      passwordHash,
-      status: 'active',
-      emailVerifiedAt: new Date(),
-    })
-    .returning({ id: users.id, email: users.email })
-
-  await database.insert(profiles).values({
-    userId: user.id,
+  const user = await getOrCreateUserForRole({
+    email: input.email,
     fullName: input.ownerName,
     phone: input.phone,
-  })
-
-  await database.insert(userRoles).values({
-    userId: user.id,
     role: 'restaurant',
   })
 
@@ -1933,10 +2053,47 @@ function defaultSalesSettings() {
   }
 }
 
+async function selectOperationsDeliveryPricing() {
+  const settings = await selectAdminSetting('operations_delivery_pricing', {
+    baseFeeAmount: 300,
+    feePerKmAmount: 80,
+    minimumFeeAmount: 400,
+    freeDeliveryThresholdAmount: 0,
+    serviceAreaOverrides: [] as { serviceAreaId: string; deliveryFeeAmount: number }[],
+  })
+
+  const [areaRows, restaurantRows] = await Promise.all([
+    database
+      .select({
+        id: serviceAreas.id,
+        name: serviceAreas.name,
+        city: serviceAreas.city,
+        state: serviceAreas.state,
+        isActive: serviceAreas.isActive,
+      })
+      .from(serviceAreas)
+      .orderBy(serviceAreas.name),
+    database
+      .select({
+        id: restaurants.id,
+        name: restaurants.name,
+        streetAddress: restaurants.streetAddress,
+      })
+      .from(restaurants)
+      .orderBy(restaurants.name),
+  ])
+
+  return {
+    pricing: settings,
+    serviceAreas: areaRows,
+    restaurants: restaurantRows,
+  }
+}
+
 async function selectAdminFoodCombos() {
   const comboStatusMap = await selectAdminSetting<Record<string, string>>('admin_combo_statuses', {})
   const comboCategoryMap = await selectAdminSetting<Record<string, string>>('admin_combo_categories', {})
-  const [comboRows, restaurantRows] = await Promise.all([
+  const [comboRows, restaurantRows, menuItemRowsForSelect] = await Promise.all([
     database
     .select({
       id: combos.id,
@@ -1955,6 +2112,15 @@ async function selectAdminFoodCombos() {
     .innerJoin(restaurants, eq(combos.restaurantId, restaurants.id))
     .orderBy(desc(combos.createdAt)),
     database.select({ name: restaurants.name }).from(restaurants).orderBy(restaurants.name),
+    database
+      .select({
+        itemName: menuItems.name,
+        restaurantName: restaurants.name,
+      })
+      .from(menuItems)
+      .innerJoin(restaurants, eq(menuItems.restaurantId, restaurants.id))
+      .where(eq(menuItems.isAvailable, true))
+      .orderBy(restaurants.name, menuItems.name),
   ])
 
   const comboIds = comboRows.map((combo) => combo.id)
@@ -2016,6 +2182,10 @@ async function selectAdminFoodCombos() {
     },
     combos: comboList,
     restaurants: restaurantRows.map((restaurant) => restaurant.name),
+    menuItemsByRestaurant: menuItemRowsForSelect.reduce<Record<string, string[]>>((map, item) => {
+      map[item.restaurantName] = [...(map[item.restaurantName] ?? []), item.itemName]
+      return map
+    }, {}),
   }
 }
 
@@ -2259,28 +2429,12 @@ async function selectAdminSalesAgentDetail(agentId: string) {
 
 async function createAdminSalesAgent(input: z.infer<typeof salesAgentBodySchema>) {
   const fullName = `${input.firstName} ${input.lastName}`.trim()
-  const passwordHash = await hashPassword(createTemporaryPassword())
   const agentCode = await createUniqueAgentCode(fullName)
   const referralCode = input.referralCode || await createUniqueReferralCode(fullName)
-
-  const [user] = await database
-    .insert(users)
-    .values({
-      email: input.email,
-      passwordHash,
-      status: 'active',
-      emailVerifiedAt: new Date(),
-    })
-    .returning({ id: users.id })
-
-  await database.insert(profiles).values({
-    userId: user.id,
+  const user = await getOrCreateUserForRole({
+    email: input.email,
     fullName,
     phone: input.phone,
-  })
-
-  await database.insert(userRoles).values({
-    userId: user.id,
     role: 'sales_agent',
   })
 
@@ -2661,41 +2815,13 @@ async function selectAdminRiderCommissions() {
 }
 
 async function createAdminRider(input: z.infer<typeof riderBodySchema>) {
-  const [existingUser] = await database
-    .select({ id: users.id })
-    .from(users)
-    .where(eq(users.email, input.email))
-    .limit(1)
-
-  if (existingUser) {
-    const error = new Error('Rider email already exists')
-    ;(error as { code?: string }).code = '23505'
-    throw error
-  }
-
   const serviceArea = await ensureServiceArea(input.serviceArea)
-  const passwordHash = await hashPassword(createTemporaryPassword())
   const riderCode = await createUniqueRiderCode(input.fullName)
   const accountNumberLast4 = input.accountNumber.slice(-4)
-
-  const [user] = await database
-    .insert(users)
-    .values({
-      email: input.email,
-      passwordHash,
-      status: 'active',
-      emailVerifiedAt: new Date(),
-    })
-    .returning({ id: users.id })
-
-  await database.insert(profiles).values({
-    userId: user.id,
+  const user = await getOrCreateUserForRole({
+    email: input.email,
     fullName: input.fullName,
     phone: input.phone,
-  })
-
-  await database.insert(userRoles).values({
-    userId: user.id,
     role: 'rider',
   })
 
@@ -2895,6 +3021,60 @@ function slugify(value: string) {
 
 function createTemporaryPassword() {
   return 'Password123!'
+}
+
+async function getOrCreateUserForRole(input: {
+  email: string
+  fullName: string
+  phone?: string | null
+  role: 'customer' | 'restaurant' | 'rider' | 'sales_agent' | 'admin'
+}) {
+  const normalizedEmail = input.email.trim().toLowerCase()
+  const [existingUser] = await database
+    .select({ id: users.id, email: users.email })
+    .from(users)
+    .where(sql`lower(${users.email}) = ${normalizedEmail}`)
+    .limit(1)
+
+  const user = existingUser ?? (
+    await database
+      .insert(users)
+      .values({
+        email: normalizedEmail,
+        passwordHash: await hashPassword(createTemporaryPassword()),
+        status: 'active',
+        emailVerifiedAt: new Date(),
+      })
+      .returning({ id: users.id, email: users.email })
+  )[0]
+
+  if (!user) throw new Error('User creation failed.')
+
+  await database
+    .insert(profiles)
+    .values({
+      userId: user.id,
+      fullName: input.fullName,
+      phone: input.phone ?? null,
+    })
+    .onConflictDoUpdate({
+      target: profiles.userId,
+      set: {
+        fullName: input.fullName,
+        phone: input.phone ?? null,
+        updatedAt: new Date(),
+      },
+    })
+
+  await database
+    .insert(userRoles)
+    .values({
+      userId: user.id,
+      role: input.role,
+    })
+    .onConflictDoNothing()
+
+  return user
 }
 
 function buildVendorStats(vendorRows: Awaited<ReturnType<typeof selectAdminVendors>>) {
@@ -3348,5 +3528,14 @@ function isUniqueViolation(error: unknown) {
     error !== null &&
     'code' in error &&
     (error as { code?: string }).code === '23505'
+  )
+}
+
+function isForeignKeyViolation(error: unknown) {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: string }).code === '23503'
   )
 }

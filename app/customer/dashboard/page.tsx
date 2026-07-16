@@ -17,10 +17,10 @@ import useNotificationStore from "@/store/notificationStore";
 import useCartStore from "@/store/cartStore";
 import { useToastStore } from "@/store/toastStore";
 
-const API_BASE_URL =
-  (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000").replace(/\/+$/, "");
-const SUPPORT_WHATSAPP_URL =
-  `https://wa.me/2349164716562?text=${encodeURIComponent("Hi Mando Support, I need help with")}`;
+const API_BASE_URL = (
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000"
+).replace(/\/+$/, "");
+const SUPPORT_WHATSAPP_URL = `https://wa.me/2349164716562?text=${encodeURIComponent("Hi Mando Support, I need help with")}`;
 
 type SavedAddress = {
   id: string;
@@ -61,60 +61,72 @@ type PromoCombo = {
   }[];
 };
 
-const promoCombos: PromoCombo[] = [
-  {
-    id: "promo-weekend-rice",
-    bannerImage: "/ad.png",
-    title: "Weekend rice deal",
-    subtitle: "A ready-to-order promo plate for lunch cravings.",
-    restaurantName: "Mama Chef Cafe",
-    customRestaurantId: "00000000-0000-4000-8000-000000000101",
-    comboName: "Promo Jollof Rice Plate",
-    price: 2500,
-    components: [
-      {
-        menuItemId: "00000000-0000-4000-8000-000000000201",
-        name: "Jollof rice",
-        quantity: 2,
-        baseQuantity: 2,
-        unitPrice: 900,
-      },
-      {
-        menuItemId: "00000000-0000-4000-8000-000000000202",
-        name: "Chicken",
-        quantity: 1,
-        baseQuantity: 1,
-        unitPrice: 700,
-      },
-    ],
-  },
-  {
-    id: "promo-local-bowl",
-    bannerImage: "/ad.png",
-    title: "Local bowl special",
-    subtitle: "A quick promo combo for local food lovers.",
-    restaurantName: "Mama Chef Cafe",
-    customRestaurantId: "00000000-0000-4000-8000-000000000101",
-    comboName: "Promo Local Bowl",
-    price: 2200,
-    components: [
-      {
-        menuItemId: "00000000-0000-4000-8000-000000000203",
-        name: "Amala",
-        quantity: 2,
-        baseQuantity: 2,
-        unitPrice: 600,
-      },
-      {
-        menuItemId: "00000000-0000-4000-8000-000000000204",
-        name: "Ewedu and stew",
-        quantity: 1,
-        baseQuantity: 1,
-        unitPrice: 1000,
-      },
-    ],
-  },
-];
+const promoBundle = {
+  bannerImage: "/promo-banner.jpg",
+  title: "Mando promo bundle",
+  subtitle: "Choose plates from two limited promo combos at checkout.",
+  combos: [
+    {
+      id: "promo-weekend-rice",
+      bannerImage: "/promo-combo-1.jpg",
+      title: "Jollof rice, moimoi and fish",
+      subtitle: "A ready-to-order promo plate.",
+      restaurantName: "Mjay Lavish",
+      customRestaurantId: "431a837b-f4b9-4766-b41d-47c6bc2318d6",
+      comboName: "Promo Jollof rice, moimoi and fish plate",
+      price: 2000,
+      components: [
+        {
+          menuItemId: "b49e0d8f-75ba-47bc-9243-f236e75d4068",
+          name: "Jollof Rice",
+          quantity: 2,
+          baseQuantity: 2,
+          unitPrice: 800,
+        },
+        {
+          menuItemId: "1a309c71-1db4-493d-afcf-c5edd8ab5df3",
+          name: "Moimoi",
+          quantity: 1,
+          baseQuantity: 1,
+          unitPrice: 1200,
+        },
+        {
+          menuItemId: "1a309c71-1db4-493d-afcf-c5edd8ab5df3",
+          name: "Fish (Fried)",
+          quantity: 1,
+          baseQuantity: 1,
+          unitPrice: 1200,
+        },
+      ],
+    },
+    {
+      id: "promo-local-bowl",
+      bannerImage: "/promo-combo-2.jpg",
+      title: "Jollof Spag and Fried Fish",
+      subtitle: "A quick promo combo for jollof spag lovers.",
+      restaurantName: "Mjay Lavish",
+      customRestaurantId: "431a837b-f4b9-4766-b41d-47c6bc2318d6",
+      comboName: "Promo Jollof Spag and Fried Fish Plate",
+      price: 2000,
+      components: [
+        {
+          menuItemId: "70ef75d3-36fe-469b-9d51-b1971778b192",
+          name: "Spaghetti Jollof",
+          quantity: 3,
+          baseQuantity: 1,
+          unitPrice: 400,
+        },
+        {
+          menuItemId: "d4d34b42-e5dd-4fee-88f8-a52801a4a392",
+          name: "Fish (Fried)",
+          quantity: 1,
+          baseQuantity: 1,
+          unitPrice: 300,
+        },
+      ],
+    },
+  ],
+};
 
 function formatAddress(address: SavedAddress) {
   return `${address.streetAddress}, ${address.serviceArea.name}`;
@@ -130,12 +142,13 @@ const Dashboard = () => {
   const setNotifications = useNotificationStore((s) => s.setNotifications);
   const addItem = useCartStore((s) => s.addItem);
   const showToast = useToastStore((s) => s.showToast);
-  const [deliveryAddress, setDeliveryAddress] = useState("Add delivery address");
+  const [deliveryAddress, setDeliveryAddress] = useState(
+    "Add delivery address",
+  );
   const [combos, setCombos] = useState<ComboSummary[]>([]);
   const [combosLoading, setCombosLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
-  const [activePromoIndex, setActivePromoIndex] = useState(0);
 
   useEffect(() => {
     let mounted = true;
@@ -151,7 +164,9 @@ const Dashboard = () => {
       .then((data) => {
         if (!mounted || !data) return;
 
-        const defaultAddress = data.addresses.find((address) => address.isDefault) ?? data.addresses[0];
+        const defaultAddress =
+          data.addresses.find((address) => address.isDefault) ??
+          data.addresses[0];
 
         if (defaultAddress) {
           setDeliveryAddress(formatAddress(defaultAddress));
@@ -188,7 +203,9 @@ const Dashboard = () => {
       .then(async (response) => {
         if (!response.ok) return null;
 
-        return response.json() as Promise<{ notifications: Parameters<typeof setNotifications>[0] }>;
+        return response.json() as Promise<{
+          notifications: Parameters<typeof setNotifications>[0];
+        }>;
       })
       .then((data) => {
         if (!mounted || !data) return;
@@ -203,15 +220,8 @@ const Dashboard = () => {
 
   useEffect(() => {
     const storedSearches = localStorage.getItem("mando_recent_searches");
-    if (storedSearches) setRecentSearches(JSON.parse(storedSearches) as string[]);
-  }, []);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      setActivePromoIndex((current) => (current + 1) % promoCombos.length);
-    }, 4000);
-
-    return () => window.clearInterval(timer);
+    if (storedSearches)
+      setRecentSearches(JSON.parse(storedSearches) as string[]);
   }, []);
 
   const comboSearchResults = useMemo(
@@ -220,7 +230,9 @@ const Dashboard = () => {
         .filter((combo) => {
           const query = searchQuery.trim().toLowerCase();
           if (!query) return true;
-          return `${combo.name} ${combo.restaurant.name}`.toLowerCase().includes(query);
+          return `${combo.name} ${combo.restaurant.name}`
+            .toLowerCase()
+            .includes(query);
         })
         .map((combo) => ({
           label: combo.name,
@@ -237,30 +249,33 @@ const Dashboard = () => {
 
     if (!query) return;
 
-    const nextSearches = Array.from(new Set([query, ...recentSearches])).slice(0, 6);
+    const nextSearches = Array.from(new Set([query, ...recentSearches])).slice(
+      0,
+      6,
+    );
     setRecentSearches(nextSearches);
     localStorage.setItem("mando_recent_searches", JSON.stringify(nextSearches));
     router.push(`/customer/featured-combos?q=${encodeURIComponent(query)}`);
   }
 
-  function addPromoComboToCart(promo: PromoCombo) {
-    addItem({
-      id: promo.id,
-      image: promo.bannerImage,
-      restaurantName: promo.restaurantName,
-      comboName: promo.comboName,
-      quantity: 1,
-      price: promo.price,
-      customRestaurantId: promo.customRestaurantId,
-      isCustomCombo: true,
-      isPromoCombo: true,
-      components: promo.components,
+  function addPromoBundleToCart() {
+    promoBundle.combos.forEach((promo) => {
+      addItem({
+        id: promo.id,
+        image: promo.bannerImage,
+        restaurantName: promo.restaurantName,
+        comboName: promo.comboName,
+        quantity: 1,
+        price: promo.price,
+        customRestaurantId: promo.customRestaurantId,
+        isCustomCombo: true,
+        isPromoCombo: true,
+        components: promo.components,
+      });
     });
-    showToast("Promo combo added to cart", "success");
+    showToast("Promo combos added to cart", "success");
     router.push("/customer/cart");
   }
-
-  const activePromo = promoCombos[activePromoIndex];
 
   return (
     <div className="p-6 pb-28">
@@ -277,7 +292,10 @@ const Dashboard = () => {
           </div>
         </Link>
         <div className="relative">
-          <Link href="/customer/notifications" className="bg-[#FFDB431A] w-[49px] h-[49px] rounded-full flex items-center justify-center relative">
+          <Link
+            href="/customer/notifications"
+            className="bg-[#FFDB431A] w-[49px] h-[49px] rounded-full flex items-center justify-center relative"
+          >
             <NotificationIcon />
           </Link>
           {unreadCount > 0 && (
@@ -294,7 +312,10 @@ const Dashboard = () => {
       </h2>
 
       <div className="relative">
-        <form onSubmit={submitSearch} className="flex items-center space-x-3 rounded-md border border-[#cccccc] p-3 w-full">
+        <form
+          onSubmit={submitSearch}
+          className="flex items-center space-x-3 rounded-md border border-[#cccccc] p-3 w-full"
+        >
           <SearchIcon />
           <input
             type="text"
@@ -310,8 +331,14 @@ const Dashboard = () => {
           recentSearches={recentSearches}
           onRecentSearch={setSearchQuery}
           filters={[
-            { label: "Combos", href: `/customer/featured-combos?q=${encodeURIComponent(searchQuery)}` },
-            { label: "Restaurants", href: `/customer/restaurants?q=${encodeURIComponent(searchQuery)}` },
+            {
+              label: "Combos",
+              href: `/customer/featured-combos?q=${encodeURIComponent(searchQuery)}`,
+            },
+            {
+              label: "Restaurants",
+              href: `/customer/restaurants?q=${encodeURIComponent(searchQuery)}`,
+            },
             { label: "Nearby", href: "/customer/restaurants?filter=nearby" },
           ]}
         />
@@ -320,29 +347,24 @@ const Dashboard = () => {
       <div className="mt-10">
         <button
           type="button"
-          onClick={() => addPromoComboToCart(activePromo)}
+          onClick={addPromoBundleToCart}
           className="relative block w-full overflow-hidden rounded-3xl text-left shadow-sm"
         >
-          <img src={activePromo.bannerImage} className="h-40 w-full object-cover" alt={activePromo.title} />
-          <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/35 to-transparent" />
-          <div className="absolute inset-y-0 left-0 flex max-w-[72%] flex-col justify-center p-5 text-white">
-            <p className="text-xs font-semibold uppercase tracking-wide text-[#FFE17A]">Promo combo</p>
-            <h3 className="mt-1 text-2xl font-bold leading-tight">{activePromo.title}</h3>
-            <p className="mt-2 text-sm text-white/85">{activePromo.subtitle}</p>
-            <p className="mt-3 text-sm font-semibold">From {activePromo.restaurantName} - {formatNaira(activePromo.price)}</p>
-          </div>
-          <div className="absolute bottom-3 right-4 flex gap-1">
-            {promoCombos.map((promo, index) => (
-              <span key={promo.id} className={`h-2 rounded-full ${index === activePromoIndex ? "w-6 bg-white" : "w-2 bg-white/55"}`} />
-            ))}
-          </div>
+          <img
+            src={promoBundle.bannerImage}
+            className="h-44 w-full object-cover"
+            alt={promoBundle.title}
+          />
         </button>
       </div>
 
       <div className="mt-10">
         <div className="flex items-center justify-between">
           <h2 className="text-[24px] font-semibold">Combos</h2>
-          <Link href="/customer/featured-combos" className="text-[18px] text-[#A4A4A4]">
+          <Link
+            href="/customer/featured-combos"
+            className="text-[18px] text-[#A4A4A4]"
+          >
             See all combos
           </Link>
         </div>
