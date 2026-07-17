@@ -874,7 +874,7 @@ function AddItemModal({
           <FormField label="Mando's price" name="mandoPrice" type="number" placeholder="250" />
         </div>
 
-        <ModalActions cancelLabel="Cancel" actionLabel={saving ? "Uploading..." : "Add item"} onCancel={onClose} disabled={saving} />
+        <ModalActions cancelLabel="Cancel" actionLabel={saving ? "Processing..." : "Add item"} onCancel={onClose} disabled={saving} />
       </form>
     </ModalShell>
   );
@@ -902,6 +902,45 @@ function VendorFormModal({
   function saveVendorFromForm() {
     if (!formRef.current || saving) return;
     void submitVendor(new FormData(formRef.current));
+  }
+
+  function validateStep() {
+    if (!formRef.current) return false;
+    const formData = new FormData(formRef.current);
+    const stepFields: Record<number, readonly (readonly [string, string])[]> = {
+      1: [
+        ["restaurantName", "restaurant name"],
+        ["fullAddress", "full address"],
+        ["serviceArea", "service area"],
+      ],
+      2: [
+        ["ownerName", "owner/manager name"],
+        ["phone", "phone number"],
+        ["email", "email address"],
+      ],
+      3: [["minimumOrder", "minimum order"]],
+      4: [],
+    };
+
+    for (const [fieldName, label] of stepFields[step] ?? []) {
+      if (!String(formData.get(fieldName) ?? "").trim()) {
+        showToast(`Please enter ${label}`, "error");
+        return false;
+      }
+    }
+
+    const email = String(formData.get("email") ?? "").trim();
+    if (step === 2 && email && !email.includes("@")) {
+      showToast("Please enter a valid email address", "error");
+      return false;
+    }
+
+    return true;
+  }
+
+  function goNext() {
+    if (!validateStep()) return;
+    setStep((current) => current + 1);
   }
 
   async function submitVendor(formData: FormData) {
@@ -1025,7 +1064,7 @@ function VendorFormModal({
           </button>
           <button
             type="button"
-            onClick={step === 4 ? saveVendorFromForm : () => setStep((current) => current + 1)}
+            onClick={step === 4 ? saveVendorFromForm : goNext}
             disabled={saving}
             className="rounded-lg bg-[#FE9A00] px-4 py-2 text-[11px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
           >

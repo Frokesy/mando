@@ -57,13 +57,16 @@ type FinancialsResponse = {
   serviceCharges: {
     serviceChargeAmount: number;
     deliveryFeeAmount: number;
+    serviceChargesByArea: Record<string, number>;
   };
+  serviceAreas: { id: string; name: string }[];
   transactions: Transaction[];
 };
 
 const emptyFinancials: FinancialsResponse = {
   stats: { totalRevenue: 0, totalPayouts: 0, pendingPayouts: 0, totalRefunds: 0 },
-  serviceCharges: { serviceChargeAmount: 50, deliveryFeeAmount: 400 },
+  serviceCharges: { serviceChargeAmount: 50, deliveryFeeAmount: 0, serviceChargesByArea: {} },
+  serviceAreas: [],
   transactions: [],
 };
 
@@ -262,6 +265,8 @@ export default function AdminFinancialsPage() {
       {showChargesModal ? (
         <ServiceChargeModal
           serviceChargeAmount={data.serviceCharges.serviceChargeAmount}
+          serviceChargesByArea={data.serviceCharges.serviceChargesByArea}
+          serviceAreas={data.serviceAreas}
           onClose={() => setShowChargesModal(false)}
           onSaved={() => {
             setShowChargesModal(false);
@@ -303,11 +308,25 @@ function StatusPill({ status }: { status: TransactionStatus }) {
   const styles = { successful: "bg-[#DCFCE7] text-[#16A34A]", processing: "bg-[#EFF6FF] text-[#1D4ED8]", pending: "bg-[#FFF7E0] text-[#B7791F]", failed: "bg-[#FEF2F2] text-[#DC2626]", refunded: "bg-[#F5F3FF] text-[#7E22CE]" };
   return <p className={`rounded-lg px-2 py-1 text-center text-[10px] font-semibold capitalize ${styles[status]}`}>{status}</p>;
 }
-function ServiceChargeModal({ serviceChargeAmount, onClose, onSaved }: { serviceChargeAmount: number; onClose: () => void; onSaved: () => void }) {
+function ServiceChargeModal({
+  serviceChargeAmount,
+  serviceChargesByArea,
+  serviceAreas,
+  onClose,
+  onSaved,
+}: {
+  serviceChargeAmount: number;
+  serviceChargesByArea: Record<string, number>;
+  serviceAreas: { id: string; name: string }[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
   const [saving, setSaving] = useState(false);
-  const [selectedArea, setSelectedArea] = useState("All service areas");
-  const serviceAreas = ["All service areas", "Fashina", "Moremi Estate", "NASFAT Area"];
+  const areaOptions = serviceAreas.map((area) => area.name);
+  const [selectedArea, setSelectedArea] = useState(areaOptions[0] ?? "");
+  const selectedCharge = serviceChargesByArea[selectedArea] ?? serviceChargeAmount;
   async function saveCharges(formData: FormData) {
+    if (!selectedArea || saving) return;
     setSaving(true);
     try {
       const response = await fetch(`${API_BASE_URL}/admin/financials/service-charges`, {
@@ -330,30 +349,34 @@ function ServiceChargeModal({ serviceChargeAmount, onClose, onSaved }: { service
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4 backdrop-blur-sm">
-      <form action={saveCharges} className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl">
+      <form action={saveCharges} noValidate className="w-full max-w-3xl rounded-2xl bg-white p-5 shadow-2xl">
         <div className="flex items-start justify-between gap-4">
           <div>
             <h2 className="text-sm font-semibold text-[#101828]">Set service charges</h2>
             <p className="mt-1 text-[11px] text-[#6A7282]">Set customer service charge per service area. Delivery pricing belongs in Operations.</p>
           </div>
-          <button onClick={onClose} className="rounded-lg border border-gray-200 px-3 py-2 text-[10px] font-semibold text-[#6A7282]">Close</button>
+          <button type="button" onClick={onClose} disabled={saving} className="rounded-lg border border-gray-200 px-3 py-2 text-[10px] font-semibold text-[#6A7282] disabled:opacity-60">Close</button>
         </div>
-        <div className="mt-5 grid grid-cols-2 gap-3">
-          {serviceAreas.map((area) => (
+        <div className="mt-5 grid grid-cols-4 gap-3">
+          {areaOptions.map((area) => (
             <button
               type="button"
               key={area}
+              disabled={saving}
               onClick={() => setSelectedArea(area)}
-              className={`rounded-2xl border p-4 text-left text-[11px] font-semibold ${selectedArea === area ? "border-[#FE9A00] bg-[#FFFBEB] text-[#101828]" : "border-gray-200 text-[#6A7282]"}`}
+              className={`rounded-2xl border p-4 text-left text-[11px] font-semibold disabled:opacity-60 ${selectedArea === area ? "border-[#FE9A00] bg-[#FFFBEB] text-[#101828]" : "border-gray-200 text-[#6A7282]"}`}
             >
               {area}
             </button>
           ))}
         </div>
         <div className="mt-5 grid grid-cols-2 gap-4">
-          <FormField name="serviceChargeAmount" label={`Service charge - ${selectedArea}`} defaultValue={String(serviceChargeAmount)} />
+          <FormField key={selectedArea} name="serviceChargeAmount" label={`Service charge - ${selectedArea}`} defaultValue={String(selectedCharge)} />
           <FormField name="effectiveDate" label="Effective date" type="date" />
         </div>
+        <p className="mt-3 text-[10px] font-semibold text-[#99A1AF]">
+          This saves only the selected service area. Other locations keep their own service charge.
+        </p>
         <div className="mt-6 flex justify-end">
           <Button type="submit" disabled={saving}>{saving ? "Saving..." : "Save charges"}</Button>
         </div>

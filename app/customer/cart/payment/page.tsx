@@ -118,6 +118,31 @@ export default function PaymentPage() {
     setCreatingOrder(true);
 
     try {
+      const normalizedItems = items.map((item) => {
+        const components = (item.components ?? [])
+          .filter((component) => component.quantity > 0)
+          .map((component) => ({
+            menuItemId: component.menuItemId,
+            quantity: component.quantity,
+          }));
+
+        if (item.isCustomCombo && item.customRestaurantId) {
+          return {
+            restaurantId: item.customRestaurantId,
+            comboName: item.comboName,
+            quantity: item.quantity,
+            components,
+          };
+        }
+
+        return {
+          comboId: item.id,
+          quantity: item.quantity,
+          useComboPrice: Boolean(item.isPromoCombo),
+          components,
+        };
+      });
+
       const response = await fetch(`${API_BASE_URL}/customer/orders`, {
         method: "POST",
         headers: {
@@ -126,14 +151,7 @@ export default function PaymentPage() {
         credentials: "include",
         body: JSON.stringify({
           paymentMethod: "card",
-          items: items.map((item) => ({
-            comboId: item.id,
-            quantity: item.quantity,
-            components: item.components?.map((component) => ({
-              menuItemId: component.menuItemId,
-              quantity: component.quantity,
-            })),
-          })),
+          items: normalizedItems,
         }),
       });
 

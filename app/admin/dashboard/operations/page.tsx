@@ -52,6 +52,7 @@ export default function AdminOperationsPage() {
   const [serviceAreas, setServiceAreas] = useState<ServiceArea[]>([]);
   const [restaurants, setRestaurants] = useState<RestaurantLocation[]>([]);
   const [serviceAreaModal, setServiceAreaModal] = useState<ServiceArea | "new" | null>(null);
+  const [areaPendingDelete, setAreaPendingDelete] = useState<ServiceArea | null>(null);
   const [deletingAreaId, setDeletingAreaId] = useState<string | null>(null);
 
   async function loadOperations() {
@@ -127,8 +128,6 @@ export default function AdminOperationsPage() {
   }
 
   async function deleteServiceArea(serviceArea: ServiceArea) {
-    if (!window.confirm(`Delete ${serviceArea.name}?`)) return;
-
     setDeletingAreaId(serviceArea.id);
     try {
       const response = await fetch(`${API_BASE_URL}/admin/operations/service-areas/${serviceArea.id}`, {
@@ -138,6 +137,7 @@ export default function AdminOperationsPage() {
       const payload = await response.json().catch(() => null) as { message?: string } | null;
       if (!response.ok) throw new Error(payload?.message ?? "Unable to delete service area");
       showToast("Service area deleted", "success");
+      setAreaPendingDelete(null);
       await loadOperations();
     } catch (error) {
       showToast(error instanceof Error ? error.message : "Unable to delete service area", "error");
@@ -226,7 +226,7 @@ export default function AdminOperationsPage() {
                   <FaEdit />
                   Edit
                 </button>
-                <button disabled={deletingAreaId === area.id} onClick={() => void deleteServiceArea(area)} className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-[10px] font-semibold text-red-600 disabled:opacity-60">
+                <button disabled={deletingAreaId === area.id} onClick={() => setAreaPendingDelete(area)} className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-[10px] font-semibold text-red-600 disabled:opacity-60">
                   <FaTrash />
                   {deletingAreaId === area.id ? "Deleting..." : "Delete"}
                 </button>
@@ -258,6 +258,52 @@ export default function AdminOperationsPage() {
           }}
         />
       ) : null}
+      {areaPendingDelete ? (
+        <ConfirmationModal
+          title="Delete service area"
+          message={`Delete ${areaPendingDelete.name}? If this area is already used by orders, riders, restaurants or addresses, it will be protected.`}
+          confirmLabel={deletingAreaId === areaPendingDelete.id ? "Deleting..." : "Delete"}
+          danger
+          disabled={deletingAreaId === areaPendingDelete.id}
+          onCancel={() => setAreaPendingDelete(null)}
+          onConfirm={() => void deleteServiceArea(areaPendingDelete)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function ConfirmationModal({
+  title,
+  message,
+  confirmLabel,
+  danger,
+  disabled,
+  onCancel,
+  onConfirm,
+}: {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  danger?: boolean;
+  disabled?: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4 backdrop-blur-sm">
+      <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
+        <h2 className="text-sm font-semibold text-[#101828]">{title}</h2>
+        <p className="mt-2 text-[11px] leading-5 text-[#6A7282]">{message}</p>
+        <div className="mt-6 flex justify-end gap-3">
+          <button type="button" disabled={disabled} onClick={onCancel} className="rounded-lg border border-gray-200 px-4 py-2 text-[11px] font-semibold text-[#6A7282] disabled:opacity-60">
+            Cancel
+          </button>
+          <button type="button" disabled={disabled} onClick={onConfirm} className={`rounded-lg px-4 py-2 text-[11px] font-semibold text-white disabled:opacity-60 ${danger ? "bg-red-600" : "bg-[#FE9A00]"}`}>
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

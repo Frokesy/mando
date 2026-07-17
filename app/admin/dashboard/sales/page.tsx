@@ -338,6 +338,7 @@ function AddAgentModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
   const [saving, setSaving] = useState(false);
   const steps = ["Personal info", "Agent setup", "Bank details", "Review"];
   async function submit(formData: FormData) {
+    if (saving) return;
     setSaving(true);
     try {
       const response = await fetch(`${API_BASE_URL}/admin/sales/agents`, {
@@ -371,25 +372,37 @@ function AddAgentModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
   return <ModalShell title="Add Agent" subtitle="Create a new sales agent account." onClose={onClose}><form action={submit}><StepTabs steps={steps} step={step} setStep={setStep} /><div className="mt-5"><div className={step === 1 ? "block" : "hidden"}><PersonalInfoStep /></div><div className={step === 2 ? "block" : "hidden"}><AgentSetupStep agentType={agentType} level={level} setAgentType={setAgentType} setLevel={setLevel} /></div><div className={step === 3 ? "block" : "hidden"}><BankDetailsStep /></div><div className={step === 4 ? "block" : "hidden"}><ReviewStep agentType={agentType} level={level} /></div></div><ModalActions step={step} setStep={setStep} onClose={onClose} finalLabel={saving ? "Saving..." : "Submit agent"} disabled={saving} /></form></ModalShell>;
 }
 function EditAgentModal({ agent, onClose, onSaved }: { agent: Agent | null; onClose: () => void; onSaved: () => void }) {
+  const showToast = useToastStore((s) => s.showToast);
+  const [saving, setSaving] = useState(false);
   async function submit(formData: FormData) {
     if (!agent) return;
-    const response = await fetch(`${API_BASE_URL}/admin/sales/agents/${agent.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({
-        fullName: formData.get("fullName"),
-        phone: formData.get("phone"),
-        email: formData.get("email"),
-        agentCode: formData.get("agentCode"),
-        status: formData.get("status"),
-        commissionRate: formData.get("commissionRate"),
-      }),
-    });
-    if (!response.ok) throw new Error("Unable to update agent");
-    onSaved();
+    if (saving) return;
+    setSaving(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/sales/agents/${agent.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          fullName: formData.get("fullName"),
+          phone: formData.get("phone"),
+          email: formData.get("email"),
+          agentCode: formData.get("agentCode"),
+          status: formData.get("status"),
+          commissionRate: formData.get("commissionRate"),
+        }),
+      });
+      const payload = await response.json().catch(() => null) as { message?: string } | null;
+      if (!response.ok) throw new Error(payload?.message ?? "Unable to update agent");
+      showToast("Agent updated successfully", "success");
+      onSaved();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Unable to update agent", "error");
+    } finally {
+      setSaving(false);
+    }
   }
-  return <ModalShell title="Edit Agent Details" subtitle="Update profile, status and commission configuration." onClose={onClose}><form action={submit}><div className="grid grid-cols-2 gap-4"><FormField name="fullName" label="Full name" defaultValue={agent?.name ?? ""} /><FormField name="phone" label="Phone number" defaultValue={agent?.phone ?? ""} /><FormField name="email" label="Email address" defaultValue={agent?.email ?? ""} /><FormField name="agentCode" label="Agent code" defaultValue={agent?.agentCode ?? ""} /><SelectField name="status" label="Status" options={["active", "pending", "suspended"]} /><FormField name="commissionRate" label="Commission rate" defaultValue={String(agent?.commissionRate ?? 0)} /></div><div className="mt-6 flex justify-end"><Button type="submit">Save changes</Button></div></form></ModalShell>;
+  return <ModalShell title="Edit Agent Details" subtitle="Update profile, status and commission configuration." onClose={onClose}><form action={submit}><div className="grid grid-cols-2 gap-4"><FormField name="fullName" label="Full name" defaultValue={agent?.name ?? ""} /><FormField name="phone" label="Phone number" defaultValue={agent?.phone ?? ""} /><FormField name="email" label="Email address" defaultValue={agent?.email ?? ""} /><FormField name="agentCode" label="Agent code" defaultValue={agent?.agentCode ?? ""} /><SelectField name="status" label="Status" options={["active", "pending", "suspended"]} /><FormField name="commissionRate" label="Commission rate" defaultValue={String(agent?.commissionRate ?? 0)} /></div><div className="mt-6 flex justify-end"><Button type="submit" disabled={saving}>{saving ? "Saving..." : "Save changes"}</Button></div></form></ModalShell>;
 }
 function PersonalInfoStep() {
   return <div className="grid grid-cols-2 gap-4"><UploadBox label="Picture" /><FormField name="firstName" label="First name" /><FormField name="lastName" label="Last name" /><FormField name="address" label="Address" /><FormField name="phone" label="Phone number" /><FormField name="email" label="Email" type="email" /></div>;

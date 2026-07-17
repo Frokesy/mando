@@ -110,7 +110,7 @@ export default function AdminRidersPage() {
   });
 
   const serviceAreaNames = useMemo(
-    () => data.serviceAreas.map((area) => area.name),
+    () => Array.from(new Set(data.serviceAreas.map((area) => area.name))),
     [data.serviceAreas],
   );
 
@@ -193,7 +193,7 @@ export default function AdminRidersPage() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ serviceArea: serviceAreas.join(", ") }),
+        body: JSON.stringify({ serviceArea: serviceAreas[0], serviceAreas }),
       });
       if (!response.ok) throw new Error("Unable to assign rider zone");
 
@@ -403,7 +403,8 @@ function AddRiderModal({ serviceAreas, onClose, onSaved }: { serviceAreas: strin
         plateNumber: String(formData.get("plateNumber") ?? ""),
         vehicleColor: String(formData.get("vehicleColor") ?? ""),
         vehicleModel: String(formData.get("vehicleModel") ?? ""),
-        serviceArea: selectedServiceAreas.join(", "),
+        serviceArea: selectedServiceAreas[0] ?? serviceAreas[0] ?? "",
+        serviceAreas: selectedServiceAreas,
         governmentIdUrl,
         vehicleLicenseUrl,
         proofOfAddressUrl,
@@ -511,7 +512,7 @@ function VehicleZoneStep({
         <p className="text-[10px] font-semibold text-[#6A7282]">Assign zone</p>
         <div className="mt-2 flex flex-wrap gap-2">
           {serviceAreas.map((area, index) => (
-            <button type="button" key={area} onClick={() => onServiceAreaToggle(area)} className={`rounded-full px-3 py-2 text-[10px] font-semibold ring-1 ${zoneStyles[index % zoneStyles.length]} ${selectedServiceAreas.includes(area) ? "shadow-sm outline outline-2 outline-offset-2 outline-[#FE9A00]" : ""}`}>
+            <button type="button" key={`${area}-${index}`} onClick={() => onServiceAreaToggle(area)} className={`rounded-full px-3 py-2 text-[10px] font-semibold ring-1 ${zoneStyles[index % zoneStyles.length]} ${selectedServiceAreas.includes(area) ? "shadow-sm outline outline-2 outline-offset-2 outline-[#FE9A00]" : ""}`}>
               <span className="mr-2 inline-flex h-2 w-2 rounded-full bg-current" />
               {area}
             </button>
@@ -582,7 +583,7 @@ function AssignZoneModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4 backdrop-blur-sm">
-      <div className="w-full max-w-xl rounded-2xl bg-white p-5 shadow-2xl">
+      <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl">
         <div className="flex items-start justify-between gap-4">
           <div>
             <h2 className="text-sm font-semibold text-[#101828]">Assign Rider Zones</h2>
@@ -591,11 +592,11 @@ function AssignZoneModal({
           <button type="button" onClick={onClose} disabled={saving} className="rounded-lg border border-gray-200 px-3 py-2 text-[10px] font-semibold text-[#6A7282] disabled:opacity-60">Close</button>
         </div>
 
-        <div className="mt-5 grid grid-cols-2 gap-3">
+        <div className="mt-5 grid grid-cols-4 gap-3">
           {serviceAreas.map((area, index) => (
             <button
               type="button"
-              key={area}
+              key={`${area}-${index}`}
               onClick={() => toggleArea(area)}
               disabled={saving}
               className={`rounded-2xl p-4 text-left text-[11px] font-semibold ring-1 transition disabled:opacity-60 ${zoneStyles[index % zoneStyles.length]} ${selectedAreas.includes(area) ? "outline outline-2 outline-offset-2 outline-[#FE9A00]" : ""}`}

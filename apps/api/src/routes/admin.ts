@@ -37,6 +37,7 @@ import {
   riderDeliveryFeeSettings,
   riderDocuments,
   riderProfiles,
+  riderServiceAreas,
   riderVehicles,
   salesAgentProfiles,
   serviceAreas,
@@ -102,6 +103,7 @@ const riderBodySchema = z.object({
   vehicleColor: z.string().trim().optional(),
   vehicleModel: z.string().trim().optional(),
   serviceArea: z.string().trim().min(2),
+  serviceAreas: z.array(z.string().trim().min(2)).optional(),
   governmentIdUrl: z.url().nullable().optional(),
   vehicleLicenseUrl: z.url().nullable().optional(),
   proofOfAddressUrl: z.url().nullable().optional(),
@@ -146,7 +148,10 @@ const riderStatusBodySchema = z.object({
 })
 
 const riderZoneBodySchema = z.object({
-  serviceArea: z.string().trim().min(2),
+  serviceArea: z.string().trim().min(2).optional(),
+  serviceAreas: z.array(z.string().trim().min(2)).min(1).optional(),
+}).refine((value) => Boolean(value.serviceArea || value.serviceAreas?.length), {
+  message: 'Choose at least one service area.',
 })
 
 const serviceChargesBodySchema = z.object({
@@ -154,6 +159,9 @@ const serviceChargesBodySchema = z.object({
   deliveryFeeAmount: z.coerce.number().int().nonnegative(),
   appliesTo: z.string().trim().optional(),
   effectiveDate: z.string().trim().optional(),
+  serviceChargesByArea: z
+    .record(z.string(), z.coerce.number().int().nonnegative())
+    .optional(),
 })
 
 const operationsDeliveryPricingBodySchema = z.object({
@@ -236,8 +244,12 @@ const adminComboBodySchema = z.object({
   description: z.string().trim().optional(),
   imageUrl: z.string().trim().optional(),
   price: z.coerce.number().int().positive(),
+  mandoPrice: z.coerce.number().int().nonnegative().optional(),
+  restaurantPayout: z.coerce.number().int().nonnegative().optional(),
   status: z.enum(['active', 'draft', 'paused', 'sold out']).default('active'),
   isFeatured: z.boolean().default(false),
+  isPromoCombo: z.boolean().default(false),
+  serviceArea: z.string().trim().optional(),
   items: z.array(adminComboItemBodySchema).min(1),
 })
 
@@ -678,7 +690,13 @@ export async function adminRoutes(app: FastifyInstance) {
       })
     }
 
-    const serviceArea = await ensureServiceArea(parsedBody.data.serviceArea)
+    const areaNames = parsedBody.data.serviceAreas?.length
+      ? parsedBody.data.serviceAreas
+      : parsedBody.data.serviceArea
+        ? parsedBody.data.serviceArea.split(',').map((area) => area.trim()).filter(Boolean)
+        : []
+    const areaRows = await Promise.all(areaNames.map((area) => ensureServiceArea(area)))
+    const serviceArea = areaRows[0]
     const [riderProfile] = await database
       .update(riderProfiles)
       .set({ serviceAreaId: serviceArea.id, updatedAt: new Date() })
@@ -690,6 +708,17 @@ export async function adminRoutes(app: FastifyInstance) {
         error: 'rider_not_found',
         message: 'Rider not found.',
       })
+    }
+
+    await database.delete(riderServiceAreas).where(eq(riderServiceAreas.riderId, riderProfile.userId))
+    if (areaRows.length > 0) {
+      await database
+        .insert(riderServiceAreas)
+        .values(areaRows.map((area) => ({
+          riderId: riderProfile.userId,
+          serviceAreaId: area.id,
+        })))
+        .onConflictDoNothing()
     }
 
     const rider = await selectAdminRiderDetail(riderProfile.userId)
@@ -1042,7 +1071,34 @@ export async function adminRoutes(app: FastifyInstance) {
       })
     }
 
-    const settings = await upsertAdminSetting('financial_service_charges', parsedBody.data)
+    const currentSettings = await selectAdminSetting<{
+      serviceChargeAmount: number
+      deliveryFeeAmount: number
+      appliesTo: string
+      effectiveDate: string
+      serviceChargesByArea: Record<string, number>
+    }>('financial_service_charges', {
+      serviceChargeAmount: 50,
+      deliveryFeeAmount: 0,
+      appliesTo: 'All service areas',
+      effectiveDate: '',
+      serviceChargesByArea: {},
+    })
+    const serviceChargesByArea = {
+      ...(currentSettings.serviceChargesByArea ?? {}),
+      ...(parsedBody.data.serviceChargesByArea ?? {}),
+    }
+
+    if (parsedBody.data.appliesTo && parsedBody.data.appliesTo !== 'All service areas') {
+      serviceChargesByArea[parsedBody.data.appliesTo] = parsedBody.data.serviceChargeAmount
+    }
+
+    const settings = await upsertAdminSetting('financial_service_charges', {
+      ...currentSettings,
+      ...parsedBody.data,
+      deliveryFeeAmount: 0,
+      serviceChargesByArea,
+    })
     return reply.status(200).send({ settings })
   })
 
@@ -1766,6 +1822,58 @@ async function createAdminVendor(input: z.infer<typeof vendorBodySchema>) {
   return selectAdminVendorDetail(restaurant.id)
 }
 
+async function syncVendorManagerMembership(
+  restaurantId: string,
+  input: z.infer<typeof vendorBodySchema>,
+) {
+  const existingManager = await selectRestaurantManager(restaurantId)
+  if (existingManager) {
+    await database
+      .update(restaurantMembers)
+      .set({
+        membershipRole: 'owner',
+        status: 'active',
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(restaurantMembers.restaurantId, restaurantId),
+          eq(restaurantMembers.userId, existingManager.userId),
+        ),
+      )
+
+    await database.insert(userRoles).values({ userId: existingManager.userId, role: 'restaurant' }).onConflictDoNothing()
+
+    return existingManager.userId
+  }
+
+  const user = await getOrCreateUserForRole({
+    email: input.email,
+    fullName: input.ownerName,
+    phone: input.phone,
+    role: 'restaurant',
+  })
+
+  await database
+    .insert(restaurantMembers)
+    .values({
+      restaurantId,
+      userId: user.id,
+      membershipRole: 'owner',
+      status: 'active',
+    })
+    .onConflictDoUpdate({
+      target: [restaurantMembers.restaurantId, restaurantMembers.userId],
+      set: {
+        membershipRole: 'owner',
+        status: 'active',
+        updatedAt: new Date(),
+      },
+    })
+
+  return user.id
+}
+
 async function updateAdminVendor(
   vendorId: string,
   input: z.infer<typeof vendorBodySchema>,
@@ -1788,29 +1896,28 @@ async function updateAdminVendor(
 
   if (!restaurant) return null
 
-  const manager = await selectRestaurantManager(vendorId)
-  if (manager) {
-    await database
-      .update(users)
-      .set({ email: input.email, updatedAt: new Date() })
-      .where(eq(users.id, manager.userId))
+  const managerUserId = await syncVendorManagerMembership(restaurant.id, input)
 
-    await database
-      .insert(profiles)
-      .values({
-        userId: manager.userId,
+  await database
+    .update(users)
+    .set({ email: input.email, updatedAt: new Date() })
+    .where(eq(users.id, managerUserId))
+
+  await database
+    .insert(profiles)
+    .values({
+      userId: managerUserId,
+      fullName: input.ownerName,
+      phone: input.phone,
+    })
+    .onConflictDoUpdate({
+      target: profiles.userId,
+      set: {
         fullName: input.ownerName,
         phone: input.phone,
-      })
-      .onConflictDoUpdate({
-        target: profiles.userId,
-        set: {
-          fullName: input.ownerName,
-          phone: input.phone,
-          updatedAt: new Date(),
-        },
-      })
-  }
+        updatedAt: new Date(),
+      },
+    })
 
   await upsertRestaurantOperations(restaurant.id, input)
   await upsertVendorDocuments(restaurant.id, input)
@@ -1904,7 +2011,7 @@ async function upsertVendorDocuments(
 }
 
 async function selectAdminFinancials() {
-  const [orderRows, paymentRows, earningRows, deliveryRows, payoutRows, orderDetails, serviceChargeSettings] =
+  const [orderRows, paymentRows, earningRows, deliveryRows, payoutRows, orderDetails, serviceChargeSettings, serviceAreaRows] =
     await Promise.all([
       database.select().from(orders),
       database.select().from(payments),
@@ -1914,10 +2021,15 @@ async function selectAdminFinancials() {
       selectAdminOrders(100),
       selectAdminSetting('financial_service_charges', {
         serviceChargeAmount: 50,
-        deliveryFeeAmount: 400,
+        deliveryFeeAmount: 0,
         appliesTo: 'All service areas',
         effectiveDate: '',
+        serviceChargesByArea: {},
       }),
+      database
+        .select({ id: serviceAreas.id, name: serviceAreas.name })
+        .from(serviceAreas)
+        .orderBy(serviceAreas.name),
     ])
 
   const serviceChargeRevenue = orderRows.reduce(
@@ -1953,8 +2065,10 @@ async function selectAdminFinancials() {
     },
     serviceCharges: {
       serviceChargeAmount: serviceChargeSettings.serviceChargeAmount,
-      deliveryFeeAmount: serviceChargeSettings.deliveryFeeAmount,
+      deliveryFeeAmount: 0,
+      serviceChargesByArea: serviceChargeSettings.serviceChargesByArea ?? {},
     },
+    serviceAreas: serviceAreaRows,
     transactions: orderDetails.map((order) => {
       const payment = paymentByOrderId.get(order.id)
 
@@ -2093,7 +2207,15 @@ async function selectOperationsDeliveryPricing() {
 async function selectAdminFoodCombos() {
   const comboStatusMap = await selectAdminSetting<Record<string, string>>('admin_combo_statuses', {})
   const comboCategoryMap = await selectAdminSetting<Record<string, string>>('admin_combo_categories', {})
-  const [comboRows, restaurantRows, menuItemRowsForSelect] = await Promise.all([
+  const promoComboIds = await selectAdminSetting<Record<string, boolean>>(
+    'admin_promo_combo_ids',
+    {},
+  )
+  const comboMandoPrices = await selectAdminSetting<Record<string, number>>(
+    'admin_combo_mando_prices',
+    {},
+  )
+  const [comboRows, restaurantRows, menuItemRowsForSelect, serviceAreaRows] = await Promise.all([
     database
     .select({
       id: combos.id,
@@ -2121,6 +2243,10 @@ async function selectAdminFoodCombos() {
       .innerJoin(restaurants, eq(menuItems.restaurantId, restaurants.id))
       .where(eq(menuItems.isAvailable, true))
       .orderBy(restaurants.name, menuItems.name),
+    database
+      .select({ id: serviceAreas.id, name: serviceAreas.name })
+      .from(serviceAreas)
+      .orderBy(serviceAreas.name),
   ])
 
   const comboIds = comboRows.map((combo) => combo.id)
@@ -2149,7 +2275,7 @@ async function selectAdminFoodCombos() {
   )
   const comboList = comboRows.map((combo) => {
     const orderItemsForCombo = orderItemsByComboId.get(combo.id) ?? []
-    const margin = calculateCommissionAmount(combo.priceAmount, combo.platformCommissionBps)
+    const margin = comboMandoPrices[combo.id] ?? calculateCommissionAmount(combo.priceAmount, combo.platformCommissionBps)
 
     return {
       id: combo.id,
@@ -2163,6 +2289,7 @@ async function selectAdminFoodCombos() {
       rating: 0,
       status: comboStatusMap[combo.id] ?? (combo.isAvailable ? 'active' : 'sold out'),
       isFeatured: combo.isFeatured,
+      isPromoCombo: Boolean(promoComboIds[combo.id]),
       items: (componentsByComboId.get(combo.id) ?? []).map((item) => ({
         name: item.menuItemName,
         quantity: `${item.quantity} portion${item.quantity === 1 ? '' : 's'}`,
@@ -2182,6 +2309,7 @@ async function selectAdminFoodCombos() {
     },
     combos: comboList,
     restaurants: restaurantRows.map((restaurant) => restaurant.name),
+    serviceAreas: serviceAreaRows,
     menuItemsByRestaurant: menuItemRowsForSelect.reduce<Record<string, string[]>>((map, item) => {
       map[item.restaurantName] = [...(map[item.restaurantName] ?? []), item.itemName]
       return map
@@ -2224,6 +2352,8 @@ async function createAdminFoodCombo(input: z.infer<typeof adminComboBodySchema>)
     .returning({ id: combos.id })
 
   await upsertComboItems(combo.id, restaurant.id, input.items)
+  await setAdminComboPromo(combo.id, input.isPromoCombo)
+  await setAdminComboMandoPrice(combo.id, input.mandoPrice)
   await setAdminComboStatus(combo.id, input.status)
   await setAdminComboCategory(combo.id, input.category || input.description || 'Combo')
   return selectAdminFoodComboDetail(combo.id)
@@ -2266,6 +2396,10 @@ async function updateAdminFoodCombo(
     await upsertComboItems(comboId, restaurantId, input.items)
   }
 
+  if (typeof input.isPromoCombo === 'boolean') {
+    await setAdminComboPromo(comboId, input.isPromoCombo)
+  }
+  if (typeof input.mandoPrice === 'number') await setAdminComboMandoPrice(comboId, input.mandoPrice)
   if (input.status) await setAdminComboStatus(comboId, input.status)
   if (input.category || input.description) await setAdminComboCategory(comboId, input.category ?? input.description ?? 'Combo')
   return selectAdminFoodComboDetail(comboId)
@@ -2276,7 +2410,30 @@ async function upsertComboItems(
   restaurantId: string,
   items: z.infer<typeof adminComboItemBodySchema>[],
 ) {
-  for (const item of items) {
+  const normalizedItems = Array.from(
+    items
+      .reduce((map, item) => {
+        const key = item.name.trim().toLowerCase()
+        if (!key) return map
+
+        const existing = map.get(key)
+        map.set(
+          key,
+          existing
+            ? {
+                ...existing,
+                quantity: existing.quantity + item.quantity,
+                extraPrice: Math.max(existing.extraPrice, item.extraPrice),
+              }
+            : item,
+        )
+
+        return map
+      }, new Map<string, z.infer<typeof adminComboItemBodySchema>>())
+      .values(),
+  )
+
+  for (const item of normalizedItems) {
     const [existingItem] = await database
       .select({ id: menuItems.id })
       .from(menuItems)
@@ -2307,6 +2464,28 @@ async function upsertComboItems(
       isOptional: false,
     })
   }
+}
+
+async function setAdminComboMandoPrice(comboId: string, mandoPrice: number | undefined) {
+  if (typeof mandoPrice !== 'number') return
+  const priceMap = await selectAdminSetting<Record<string, number>>('admin_combo_mando_prices', {})
+  await upsertAdminSetting('admin_combo_mando_prices', {
+    ...priceMap,
+    [comboId]: mandoPrice,
+  })
+}
+
+async function setAdminComboPromo(comboId: string, isPromoCombo: boolean) {
+  const promoMap = await selectAdminSetting<Record<string, boolean>>(
+    'admin_promo_combo_ids',
+    {},
+  )
+  const nextPromoMap = { ...promoMap }
+
+  if (isPromoCombo) nextPromoMap[comboId] = true
+  else delete nextPromoMap[comboId]
+
+  await upsertAdminSetting('admin_promo_combo_ids', nextPromoMap)
 }
 
 async function setAdminComboStatus(comboId: string, status: string) {
@@ -2674,10 +2853,21 @@ async function selectAdminRiders() {
   const documentRows = riderIds.length
     ? await database.select().from(riderDocuments).where(inArray(riderDocuments.riderId, riderIds))
     : []
+  const riderAreaRows = riderIds.length
+    ? await database
+        .select({
+          riderId: riderServiceAreas.riderId,
+          serviceAreaName: serviceAreas.name,
+        })
+        .from(riderServiceAreas)
+        .innerJoin(serviceAreas, eq(riderServiceAreas.serviceAreaId, serviceAreas.id))
+        .where(inArray(riderServiceAreas.riderId, riderIds))
+    : []
 
   const deliveriesByRiderId = groupBy(deliveryRows, (delivery) => delivery.riderId ?? 'unassigned')
   const requestsByRiderId = groupBy(requestRows, (request) => request.userId ?? 'unknown')
   const documentsByRiderId = groupBy(documentRows, (document) => document.riderId)
+  const serviceAreasByRiderId = groupBy(riderAreaRows, (area) => area.riderId)
 
   return riderRows.map((rider) => {
     const riderDeliveries = deliveriesByRiderId.get(rider.id) ?? []
@@ -2700,7 +2890,9 @@ async function selectAdminRiders() {
       address: rider.homeAddress ?? `${rider.serviceAreaName}, ${rider.serviceAreaCity}`,
       status: mapRiderStatus(rider.status, rider.availabilityStatus),
       availability: mapRiderAvailability(rider.availabilityStatus),
-      location: rider.serviceAreaName,
+      location: (serviceAreasByRiderId.get(rider.id) ?? [])
+        .map((area) => area.serviceAreaName)
+        .join(', ') || rider.serviceAreaName,
       vehicleType: formatVehicleType(rider.vehicleType ?? 'motorcycle'),
       plateNumber: rider.plateNumber ?? 'Not recorded',
       vehicleColor: rider.vehicleColor ?? null,
@@ -2815,7 +3007,9 @@ async function selectAdminRiderCommissions() {
 }
 
 async function createAdminRider(input: z.infer<typeof riderBodySchema>) {
-  const serviceArea = await ensureServiceArea(input.serviceArea)
+  const areaNames = input.serviceAreas?.length ? input.serviceAreas : [input.serviceArea]
+  const areaRows = await Promise.all(areaNames.map((area) => ensureServiceArea(area)))
+  const serviceArea = areaRows[0]
   const riderCode = await createUniqueRiderCode(input.fullName)
   const accountNumberLast4 = input.accountNumber.slice(-4)
   const user = await getOrCreateUserForRole({
@@ -2832,6 +3026,16 @@ async function createAdminRider(input: z.infer<typeof riderBodySchema>) {
     homeAddress: input.address,
     availabilityStatus: 'offline',
   })
+
+  if (areaRows.length > 0) {
+    await database
+      .insert(riderServiceAreas)
+      .values(areaRows.map((area) => ({
+        riderId: user.id,
+        serviceAreaId: area.id,
+      })))
+      .onConflictDoNothing()
+  }
 
   await database.insert(riderVehicles).values({
     riderId: user.id,
@@ -3134,7 +3338,7 @@ function buildVendorDocuments(vendor: Awaited<ReturnType<typeof selectAdminVendo
   ]
 }
 
-function chooseRestaurantManager(
+export function chooseRestaurantManager(
   members: (typeof restaurantMembers.$inferSelect)[],
 ) {
   return (
@@ -3532,10 +3736,15 @@ function isUniqueViolation(error: unknown) {
 }
 
 function isForeignKeyViolation(error: unknown) {
+  const code =
+    typeof error === 'object' && error !== null && 'code' in error
+      ? (error as { code?: string }).code
+      : typeof error === 'object' && error !== null && 'cause' in error
+        ? (error as { cause?: { code?: string } }).cause?.code
+        : undefined
+
   return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    (error as { code?: string }).code === '23503'
+    code === '23503' ||
+    (error instanceof Error && error.message.includes('violates foreign key constraint'))
   )
 }

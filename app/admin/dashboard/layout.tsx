@@ -1,6 +1,7 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import {
   AuditLogIcon,
   FinancialsIcon,
@@ -21,8 +22,39 @@ import {
 import { NotificationIcon } from "@/components/svgs/DefaultIcons";
 import Link from "next/link";
 
+const API_BASE_URL =
+  (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000").replace(/\/+$/, "");
+
 const AdminDashboardLayout = ({ children }: { children: React.ReactNode }) => {
   const pathname = usePathname() ?? "";
+  const router = useRouter();
+  const [checkingSession, setCheckingSession] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+
+    fetch(`${API_BASE_URL}/auth/me`, { credentials: "include" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Unauthenticated");
+        return response.json() as Promise<{ roles?: string[] }>;
+      })
+      .then((auth) => {
+        if (!mounted) return;
+        if (!auth.roles?.includes("admin")) {
+          router.replace("/admin/login");
+          return;
+        }
+        setCheckingSession(false);
+      })
+      .catch(() => {
+        if (!mounted) return;
+        router.replace("/admin/login");
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [router]);
 
   const menuItems = [
     { id: 1, item: "Overview", icon: <OverviewIcon />, slug: "overview" },
@@ -94,6 +126,16 @@ const AdminDashboardLayout = ({ children }: { children: React.ReactNode }) => {
       </Link>
     );
   };
+
+  if (checkingSession) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-100">
+        <div className="rounded-2xl bg-white px-6 py-5 text-sm font-semibold text-[#101828] shadow-sm">
+          Checking admin session...
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex justify-between pl-8">

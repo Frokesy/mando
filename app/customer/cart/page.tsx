@@ -254,6 +254,31 @@ const CartPage = () => {
     }
 
     try {
+      const normalizedItems = items.map((item) => {
+        const components = (item.components ?? [])
+          .filter((component) => component.quantity > 0)
+          .map((component) => ({
+            menuItemId: component.menuItemId,
+            quantity: component.quantity,
+          }));
+
+        if (item.isCustomCombo && item.customRestaurantId) {
+          return {
+            restaurantId: item.customRestaurantId,
+            comboName: item.comboName,
+            quantity: item.quantity,
+            components,
+          };
+        }
+
+        return {
+          comboId: item.id,
+          quantity: item.quantity,
+          useComboPrice: Boolean(item.isPromoCombo),
+          components,
+        };
+      });
+
       const orderResponse = await fetch(`${API_BASE_URL}/customer/orders`, {
         method: "POST",
         headers: {
@@ -262,27 +287,7 @@ const CartPage = () => {
         credentials: "include",
         body: JSON.stringify({
           paymentMethod: "card",
-          items: items.map((item) => {
-            const components = item.components?.map((component) => ({
-              menuItemId: component.menuItemId,
-              quantity: component.quantity,
-            }));
-
-            if (item.isCustomCombo && item.customRestaurantId) {
-              return {
-                restaurantId: item.customRestaurantId,
-                comboName: item.comboName,
-                quantity: item.quantity,
-                components,
-              };
-            }
-
-            return {
-              comboId: item.id,
-              quantity: item.quantity,
-              components,
-            };
-          }),
+          items: normalizedItems,
           promoCode: appliedPromo?.code,
         }),
       });

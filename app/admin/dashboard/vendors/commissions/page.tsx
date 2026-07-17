@@ -106,6 +106,7 @@ const VendorCommissionsPage = () => {
   }
 
   async function savePayoutSettings() {
+    if (savingSettings) return;
     setSavingSettings(true);
 
     try {

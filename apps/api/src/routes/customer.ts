@@ -73,6 +73,7 @@ const createOrderLineItemSchema = z
     restaurantId: z.uuid().optional(),
     comboName: z.string().trim().min(1).max(160).optional(),
     quantity: z.number().int().min(1).max(20),
+    useComboPrice: z.boolean().optional(),
     components: z
       .array(
         z.object({
@@ -768,13 +769,16 @@ export async function customerRoutes(app: FastifyInstance) {
           }
         })
         .filter((component) => component.quantity > 0)
-      const unitPriceAmount = item.components
-        ? components.reduce(
-            (total, component) =>
-              total + component.priceAmount * component.quantity,
-            0,
-          )
-        : combo.priceAmount
+      const shouldUseComboPrice = Boolean(item.useComboPrice)
+      const unitPriceAmount = shouldUseComboPrice
+        ? combo.priceAmount
+        : item.components
+          ? components.reduce(
+              (total, component) =>
+                total + component.priceAmount * component.quantity,
+              0,
+            )
+          : combo.priceAmount
 
       return {
         combo,

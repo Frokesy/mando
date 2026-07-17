@@ -40,6 +40,8 @@ export default function PaymentProcessingPage() {
     let verifyAttempted = false;
 
     async function confirmPayment(orderNumberFromApi?: string) {
+      if (cancelled) return;
+
       clearCart();
       showToast("Payment confirmed. Your order has been sent to the restaurant.", "success");
 
@@ -47,6 +49,7 @@ export default function PaymentProcessingPage() {
       const confirmedOrderNumber = orderNumberFromApi ?? orderNumber;
       if (confirmedOrderNumber) params.set("orderNumber", confirmedOrderNumber);
 
+      cancelled = true;
       router.replace(`/customer/cart/payment-success?${params.toString()}`);
     }
 

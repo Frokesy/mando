@@ -80,7 +80,7 @@ async function initiateHostedCheckout(
       )
 
       const hostedPayment = await createRoutePayHostedPayment({
-        amount: order.totalAmount,
+        amount: Math.round(order.paymentAmount ?? order.totalAmount),
         currency: order.currency,
         merchantId: routePayConfig.clientId,
         merchantReference,
@@ -291,6 +291,7 @@ async function getPendingCustomerOrder(customerId: string, orderId: string) {
       customerId: orders.customerId,
       status: orders.status,
       totalAmount: orders.totalAmount,
+      paymentAmount: payments.amount,
       currency: orders.currency,
       customerName: profiles.fullName,
       customerPhone: profiles.phone,
@@ -299,6 +300,7 @@ async function getPendingCustomerOrder(customerId: string, orderId: string) {
     .from(orders)
     .innerJoin(users, eq(orders.customerId, users.id))
     .innerJoin(profiles, eq(orders.customerId, profiles.userId))
+    .leftJoin(payments, eq(orders.id, payments.orderId))
     .where(
       and(
         eq(orders.id, orderId),

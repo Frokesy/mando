@@ -6,6 +6,7 @@ import StatsCard from "@/components/cards/StatsCard";
 
 const API_BASE_URL =
   (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000").replace(/\/+$/, "");
+const comboCategories = ["Rice", "Local dish", "Pasta", "Swallow", "Grill", "Breakfast", "Promo", "Other"];
 
 type ComboStatus = "active" | "draft" | "paused" | "sold out";
 type Combo = {
@@ -19,6 +20,8 @@ type Combo = {
   orders: number;
   rating: number;
   status: ComboStatus;
+  isPromoCombo: boolean;
+  isFeatured: boolean;
   items: { name: string; quantity: string; extraPrice: number }[];
 };
 
@@ -32,6 +35,7 @@ type FoodCombosResponse = {
   };
   combos: Combo[];
   restaurants: string[];
+  serviceAreas: { id: string; name: string }[];
   menuItemsByRestaurant: Record<string, string[]>;
 };
 
@@ -59,6 +63,7 @@ const emptyData: FoodCombosResponse = {
   stats: { total: 0, active: 0, inactive: 0, outOfStock: 0, totalOrdersThisWeek: 0 },
   combos: [],
   restaurants: [],
+  serviceAreas: [],
   menuItemsByRestaurant: {},
 };
 
@@ -195,19 +200,27 @@ export default function AdminFoodCombosPage() {
       </section>
 
       {notice ? <p className="fixed bottom-6 right-6 z-50 rounded-xl bg-[#101828] px-4 py-3 text-[11px] font-semibold text-white shadow-xl">{notice}</p> : null}
-      {comboModalMode ? <ComboModal mode={comboModalMode} combo={comboModalMode === "edit" ? selectedCombo : null} restaurants={data.restaurants} menuItemsByRestaurant={data.menuItemsByRestaurant} onClose={() => setComboModalMode(null)} onSaved={() => { setNotice(comboModalMode === "add" ? "Combo saved." : "Combo updated."); setComboModalMode(null); void loadCombos(); }} /> : null}
+      {comboModalMode ? <ComboModal mode={comboModalMode} combo={comboModalMode === "edit" ? selectedCombo : null} restaurants={data.restaurants} serviceAreas={data.serviceAreas} menuItemsByRestaurant={data.menuItemsByRestaurant} onClose={() => setComboModalMode(null)} onSaved={() => { setNotice(comboModalMode === "add" ? "Combo saved." : "Combo updated."); setComboModalMode(null); void loadCombos(); }} /> : null}
     </div>
   );
 }
 
-function ComboModal({ mode, combo, restaurants, menuItemsByRestaurant, onClose, onSaved }: { mode: "add" | "edit"; combo: Combo | null; restaurants: string[]; menuItemsByRestaurant: Record<string, string[]>; onClose: () => void; onSaved: () => void }) {
+function ComboModal({ mode, combo, restaurants, serviceAreas, menuItemsByRestaurant, onClose, onSaved }: { mode: "add" | "edit"; combo: Combo | null; restaurants: string[]; serviceAreas: { id: string; name: string }[]; menuItemsByRestaurant: Record<string, string[]>; onClose: () => void; onSaved: () => void }) {
   const [tab, setTab] = useState<"Basic info" | "Pricing" | "Availability" | "Items">("Basic info");
   const [saving, setSaving] = useState(false);
   const [progress, setProgress] = useState<UploadProgress | null>(null);
   const [error, setError] = useState("");
   const [selectedRestaurant, setSelectedRestaurant] = useState(combo?.restaurant ?? restaurants[0] ?? "");
+  const [itemRowCount, setItemRowCount] = useState(combo?.items.length ?? 1);
   const tabs = ["Basic info", "Pricing", "Availability", "Items"] as const;
   const itemOptions = menuItemsByRestaurant[selectedRestaurant] ?? [];
+  const baseItemSlots = combo?.items.length ? combo.items : [
+    { name: "", quantity: "1", extraPrice: 0 },
+    { name: "", quantity: "1", extraPrice: 0 },
+    { name: "", quantity: "1", extraPrice: 0 },
+    { name: itemOptions.find((item) => item.toLowerCase().includes("takeaway")) ?? "", quantity: "1", extraPrice: 0 },
+  ];
+  const itemSlots = Array.from({ length: itemRowCount }, (_, index) => baseItemSlots[index] ?? { name: "", quantity: "1", extraPrice: 0 });
 
   async function submit(formData: FormData) {
     setSaving(true);
@@ -215,7 +228,7 @@ function ComboModal({ mode, combo, restaurants, menuItemsByRestaurant, onClose, 
     setError("");
     try {
       const imageUrl = await uploadAdminImage(getSelectedFile(formData, "comboImage"), "combo_image", setProgress);
-      const items = [0, 1, 2, 3]
+      const items = Array.from({ length: itemRowCount }, (_, index) => index)
         .map((index) => ({
           name: String(formData.get(`itemName${index}`) ?? "").trim(),
           quantity: Number(formData.get(`itemQuantity${index}`) || 1),
@@ -235,6 +248,8 @@ function ComboModal({ mode, combo, restaurants, menuItemsByRestaurant, onClose, 
           price: formData.get("price"),
           status: String(formData.get("status") ?? "active").toLowerCase(),
           isFeatured: formData.get("isFeatured") === "Yes",
+          isPromoCombo: formData.get("isPromoCombo") === "Yes",
+          serviceArea: formData.get("serviceArea"),
           items,
         }),
       });
@@ -272,7 +287,7 @@ function ComboModal({ mode, combo, restaurants, menuItemsByRestaurant, onClose, 
           <div className={tab === "Basic info" ? "grid grid-cols-2 gap-4" : "hidden"}>
               <FormField name="name" label="Combo name" defaultValue={combo?.name ?? ""} placeholder="Jollof Rice & Chicken" />
               <SelectField name="restaurant" label="Restaurant" options={restaurants.length ? restaurants : combo?.restaurant ? [combo.restaurant] : []} value={selectedRestaurant} onChange={(event) => setSelectedRestaurant(event.currentTarget.value)} />
-              <FormField name="category" label="Category" defaultValue={combo?.category ?? ""} placeholder="Rice, Local dish, Pasta" />
+              <SelectField name="category" label="Category" options={comboCategories} defaultValue={comboCategories.includes(combo?.category ?? "") ? combo?.category : "Other"} />
               <FormField name="description" label="Short description" defaultValue="" placeholder="What makes this combo special" />
               <div className="col-span-2">
                 <FileUploadField label="Combo image" name="comboImage" currentUrl={combo?.image} progress={progress} />
@@ -287,17 +302,24 @@ function ComboModal({ mode, combo, restaurants, menuItemsByRestaurant, onClose, 
           <div className={tab === "Availability" ? "grid grid-cols-2 gap-4" : "hidden"}>
               <SelectField name="status" label="Status" options={["active", "draft", "paused", "sold out"]} defaultValue={combo?.status ?? "active"} />
               <SelectField name="isFeatured" label="Featured" options={["No", "Yes"]} />
+              <SelectField name="isPromoCombo" label="Promo combo" options={["No", "Yes"]} defaultValue={combo?.isPromoCombo ? "Yes" : "No"} />
+              <SelectField name="serviceArea" label="Service area" options={["All service areas", ...serviceAreas.map((area) => area.name)]} defaultValue="All service areas" />
               <FormField label="Available from" type="time" />
               <FormField label="Available until" type="time" />
               <FormField label="Daily stock limit" type="number" placeholder="Optional" />
-              <FormField label="Service area" placeholder="All areas or specific area" />
           </div>
           <div className={tab === "Items" ? "space-y-3" : "hidden"}>
-              {["Main item", "Protein", "Side", "Takeaway"].map((label, index) => (
-                <div key={label} className="grid grid-cols-[1fr_120px_120px] gap-3 rounded-xl bg-gray-50 p-3">
-                  <SelectField name={`itemName${index}`} label={label} options={itemOptions.length ? itemOptions : combo?.items.map((item) => item.name) ?? []} defaultValue={label === "Takeaway" ? itemOptions.find((item) => item.toLowerCase().includes("takeaway")) ?? combo?.items[3]?.name ?? "" : combo?.items[index]?.name ?? ""} />
-                  <FormField name={`itemQuantity${index}`} label="Quantity" type="number" defaultValue={label === "Takeaway" ? "1" : "1"} placeholder="2" />
-                  <FormField name={`itemPrice${index}`} label="Extra price" type="number" defaultValue={String(combo?.items[index]?.extraPrice ?? 0)} placeholder="0" />
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[10px] font-semibold text-[#6A7282]">Combo food items</p>
+                <button type="button" onClick={() => setItemRowCount((count) => count + 1)} className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-[10px] font-semibold text-[#6A7282]">
+                  Add new item
+                </button>
+              </div>
+              {itemSlots.map((item, index) => (
+                <div key={`${item.name || "item"}-${index}`} className="grid grid-cols-[1fr_120px_120px] gap-3 rounded-xl bg-gray-50 p-3">
+                  <SelectField name={`itemName${index}`} label={`Food item ${index + 1}`} options={itemOptions.length ? itemOptions : combo?.items.map((comboItem) => comboItem.name) ?? []} defaultValue={item.name} />
+                  <FormField name={`itemQuantity${index}`} label="Quantity" type="number" defaultValue={String(parseComboItemQuantity(item.quantity))} placeholder="2" />
+                  <FormField name={`itemPrice${index}`} label="Extra price" type="number" defaultValue={String(item.extraPrice ?? 0)} placeholder="0" />
                 </div>
               ))}
           </div>
@@ -426,7 +448,7 @@ function FormField({ label, ...props }: React.InputHTMLAttributes<HTMLInputEleme
 }
 
 function SelectField({ label, options, ...props }: React.SelectHTMLAttributes<HTMLSelectElement> & { label: string; options: string[] }) {
-  return <label className="block"><span className="text-[10px] font-semibold text-[#6A7282]">{label}</span><select {...props} className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-[11px] outline-none focus:border-[#FE9A00] focus:ring-2 focus:ring-[#FE9A00]/10">{options.map((option) => <option key={option}>{option}</option>)}</select></label>;
+  return <label className="block"><span className="text-[10px] font-semibold text-[#6A7282]">{label}</span><select {...props} className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-[11px] outline-none focus:border-[#FE9A00] focus:ring-2 focus:ring-[#FE9A00]/10">{options.map((option, index) => <option key={`${option}-${index}`}>{option}</option>)}</select></label>;
 }
 
 function Button({ children, icon, variant = "primary", onClick, type = "button", disabled }: { children: React.ReactNode; icon?: React.ReactNode; variant?: "primary" | "secondary" | "danger"; onClick?: () => void; type?: "button" | "submit"; disabled?: boolean }) {
@@ -442,6 +464,11 @@ function StatusPill({ status }: { status: ComboStatus }) {
 }
 function formatCurrency(amount: number) {
   return new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 0 }).format(amount);
+}
+
+function parseComboItemQuantity(quantity: string) {
+  const parsed = Number.parseInt(quantity, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
 }
 
 

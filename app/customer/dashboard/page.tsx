@@ -39,7 +39,9 @@ type ComboSummary = {
   ratingAverage: number;
   reviewCount: number;
   restaurant: {
+    id: string;
     name: string;
+    slug?: string;
   };
 };
 
@@ -258,23 +260,66 @@ const Dashboard = () => {
     router.push(`/customer/featured-combos?q=${encodeURIComponent(query)}`);
   }
 
-  function addPromoBundleToCart() {
-    promoBundle.combos.forEach((promo) => {
-      addItem({
-        id: promo.id,
-        image: promo.bannerImage,
-        restaurantName: promo.restaurantName,
-        comboName: promo.comboName,
-        quantity: 1,
-        price: promo.price,
-        customRestaurantId: promo.customRestaurantId,
-        isCustomCombo: true,
-        isPromoCombo: true,
-        components: promo.components,
+  async function addPromoBundleToCart() {
+    try {
+      const response = await fetch(API_BASE_URL + "/customer/combos?promo=true", {
+        credentials: "include",
       });
-    });
-    showToast("Promo combos added to cart", "success");
-    router.push("/customer/cart");
+      if (!response.ok) throw new Error("Unable to load promo combos");
+      const data = (await response.json()) as { combos: ComboSummary[] };
+      const promoCombos = data.combos.filter((combo) =>
+        combo.restaurant.name.toLowerCase().includes("mjay"),
+      );
+
+      if (!promoCombos.length) {
+        showToast("Promo combos are not available right now", "error");
+        return;
+      }
+
+      for (const combo of promoCombos) {
+        const detailResponse = await fetch(API_BASE_URL + "/customer/combos/" + combo.id, {
+          credentials: "include",
+        });
+        if (!detailResponse.ok) continue;
+        const detail = (await detailResponse.json()) as {
+          combo: ComboSummary & {
+            description?: string | null;
+            items?: Array<{
+              id?: string;
+              menuItemId?: string;
+              name: string;
+              quantity: number;
+              priceAmount: number;
+            }>;
+          };
+        };
+
+        addItem({
+          id: combo.id,
+          image: combo.imageUrl ?? "/promo-combo-1.jpg",
+          restaurantName: combo.restaurant.name,
+          comboName: combo.name,
+          quantity: 1,
+          price: combo.priceAmount,
+          customRestaurantId: combo.restaurant.id,
+          isPromoCombo: true,
+          components: (detail.combo.items ?? []).map((item) => {
+            const resolvedMenuItemId = item.menuItemId ?? item.id;
+            return {
+              menuItemId: resolvedMenuItemId ?? "",
+              name: item.name,
+              quantity: item.quantity,
+              baseQuantity: item.quantity,
+              unitPrice: item.priceAmount,
+            };
+          }),
+        });
+      }
+
+      showToast("Promo combos added to cart", "success");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Unable to add promo combos", "error");
+    }
   }
 
   return (
@@ -424,3 +469,4 @@ function ComboSkeleton() {
 }
 
 export default Dashboard;
+

@@ -47,11 +47,17 @@ export async function createRoutePayHostedPayment(
 ): Promise<HostedPaymentResult> {
   const config = getRoutePayConfig()
   const accessToken = await getRoutePayAccessToken()
+  const normalizedAmount = Math.round(Number(request.amount))
+
+  if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
+    throw new Error('RoutePay amount must be a positive integer.')
+  }
+
   const routePayPayload = {
     merchantId: request.merchantId,
     returnUrl: request.callbackUrl,
     merchantReference: request.merchantReference,
-    totalAmount: String(request.amount),
+    totalAmount: String(normalizedAmount),
     currency: request.currency,
     paymentType: 'PAYMENT',
     customer: {
@@ -64,7 +70,7 @@ export async function createRoutePayHostedPayment(
     products: [
       {
         name: request.description,
-        unitPrice: String(request.amount),
+        unitPrice: String(normalizedAmount),
         quantity: 1,
       },
     ],
