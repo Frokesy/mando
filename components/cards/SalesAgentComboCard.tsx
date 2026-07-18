@@ -9,6 +9,7 @@ type SalesAgentComboCardProps = {
   imgUrl?: string;
   uniqueUrl?: string;
   description?: string | null;
+  campaignContent?: string | null;
 };
 
 const SalesAgentComboCard = ({
@@ -18,11 +19,12 @@ const SalesAgentComboCard = ({
   imgUrl = "/dummy-img.jpg",
   uniqueUrl = "https://mando.app/r/agent-123",
   description,
+  campaignContent,
 }: SalesAgentComboCardProps) => {
   const showToast = useToastStore((s) => s.showToast);
 
   const handleShare = async () => {
-    const shareText = `Check out this MANDO combo: ${title}\n${price}\nFrom ${vendor}${description ? `\n${description}` : ""}\n\nOrder here: ${uniqueUrl}`;
+    const shareText = `${campaignContent || `Check out this MANDO combo: ${title}`}\n${price}\nFrom ${vendor}${description ? `\n${description}` : ""}\n\nOrder here: ${uniqueUrl}`;
 
     if (navigator.share) {
       try {

@@ -14,6 +14,7 @@ import {
 import { database } from '../db/client.js'
 import {
   authSessions,
+  comboCampaigns,
   combos,
   commissions,
   notifications,
@@ -666,10 +667,22 @@ async function getShareableCombos(agentUserId: string) {
       imageUrl: combos.imageUrl,
       restaurantName: restaurants.name,
       restaurantSlug: restaurants.slug,
+      campaignFlyerUrl: comboCampaigns.flyerUrl,
+      campaignContent: comboCampaigns.content,
+      campaignStartsAt: comboCampaigns.startsAt,
+      campaignEndsAt: comboCampaigns.endsAt,
+      campaignStatus: comboCampaigns.status,
     })
     .from(combos)
     .innerJoin(restaurants, eq(combos.restaurantId, restaurants.id))
-    .where(and(eq(combos.isAvailable, true), eq(restaurants.status, 'active')))
+    .innerJoin(comboCampaigns, eq(combos.id, comboCampaigns.comboId))
+    .where(
+      and(
+        eq(combos.isAvailable, true),
+        eq(restaurants.status, 'active'),
+        inArray(comboCampaigns.status, ['active', 'scheduled']),
+      ),
+    )
     .orderBy(desc(combos.isFeatured), desc(combos.createdAt))
     .limit(30)
 
@@ -679,8 +692,9 @@ async function getShareableCombos(agentUserId: string) {
     name: combo.name,
     description: combo.description,
     priceAmount: combo.priceAmount,
-    imageUrl: combo.imageUrl,
+    imageUrl: combo.campaignFlyerUrl ?? combo.imageUrl,
     restaurantName: combo.restaurantName,
+    campaignContent: combo.campaignContent,
     shareUrl: buildWebUrl(`/customer/featured-combos/${combo.id}?sa=${agentUserId}`),
   }))
 }

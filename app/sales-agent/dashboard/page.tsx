@@ -23,6 +23,7 @@ type ShareCombo = {
   imageUrl: string | null;
   restaurantName: string;
   shareUrl: string;
+  campaignContent: string | null;
 };
 
 type SalesDashboard = {
@@ -268,6 +269,7 @@ export default function SalesAgentDashboard() {
                     imgUrl={combo.imageUrl ?? "/dummy-img.jpg"}
                     uniqueUrl={combo.shareUrl}
                     description={combo.description}
+                    campaignContent={combo.campaignContent}
                   />
                 ))}
               </div>

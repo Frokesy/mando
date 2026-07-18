@@ -24,7 +24,7 @@ const ComboCard = ({
         className="h-[194px] bg-cover bg-center relative rounded-lg"
         style={{ backgroundImage: `url(${imgUrl})` }}
       >
-        <div className="bg-black/50 text-white h-[194px] rounded-lg p-3 flex flex-col justify-between">
+        <div className="bg-black/10 text-white h-[194px] rounded-lg p-3 flex flex-col justify-between">
           <div className="flex justify-end items-center space-x-1">
             <StarIcon />
             {rating ? <p className="text-[14px]">{rating}</p> : null}
