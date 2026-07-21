@@ -2269,6 +2269,7 @@ async function selectAdminFoodCombos() {
       imageUrl: combos.imageUrl,
       priceAmount: combos.priceAmount,
       isFeatured: combos.isFeatured,
+      isPromoCombo: combos.isPromoCombo,
       isAvailable: combos.isAvailable,
       createdAt: combos.createdAt,
       restaurantId: restaurants.id,
@@ -2347,7 +2348,7 @@ async function selectAdminFoodCombos() {
       rating: 0,
       status: comboStatusMap[combo.id] ?? (combo.isAvailable ? 'active' : 'sold out'),
       isFeatured: combo.isFeatured,
-      isPromoCombo: Boolean(promoComboIds[combo.id]),
+      isPromoCombo: combo.isPromoCombo,
       campaign: campaign
         ? {
             id: campaign.id,
@@ -2467,12 +2468,12 @@ async function createAdminFoodCombo(input: z.infer<typeof adminComboBodySchema>)
       priceAmount: input.price,
       imageUrl: input.imageUrl || null,
       isFeatured: input.isFeatured,
+      isPromoCombo: input.isPromoCombo,
       isAvailable: input.status === 'active',
     })
     .returning({ id: combos.id })
 
   await upsertComboItems(combo.id, restaurant.id, input.items)
-  await setAdminComboPromo(combo.id, input.isPromoCombo)
   await setAdminComboMandoPrice(combo.id, input.mandoPrice)
   await setAdminComboStatus(combo.id, input.status)
   await setAdminComboCategory(combo.id, input.category || input.description || 'Combo')
@@ -2507,6 +2508,7 @@ async function updateAdminFoodCombo(
       priceAmount: input.price,
       imageUrl: input.imageUrl,
       isFeatured: input.isFeatured,
+      isPromoCombo: input.isPromoCombo,
       isAvailable: input.status ? input.status === 'active' : undefined,
       updatedAt: new Date(),
     })
@@ -2515,10 +2517,6 @@ async function updateAdminFoodCombo(
   if (input.items?.length) {
     await database.delete(comboItems).where(eq(comboItems.comboId, comboId))
     await upsertComboItems(comboId, restaurantId, input.items)
-  }
-
-  if (typeof input.isPromoCombo === 'boolean') {
-    await setAdminComboPromo(comboId, input.isPromoCombo)
   }
   if (typeof input.mandoPrice === 'number') await setAdminComboMandoPrice(comboId, input.mandoPrice)
   if (input.status) await setAdminComboStatus(comboId, input.status)
