@@ -349,7 +349,7 @@ function ServiceChargeModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4 backdrop-blur-sm">
-      <form action={saveCharges} noValidate className="w-full max-w-3xl rounded-2xl bg-white p-5 shadow-2xl">
+      <form action={saveCharges} noValidate className="max-h-[88vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl">
         <div className="flex items-start justify-between gap-4">
           <div>
             <h2 className="text-sm font-semibold text-[#101828]">Set service charges</h2>
@@ -393,3 +393,4 @@ function formatCurrency(amount: number) {
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("en-NG", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
 }
+

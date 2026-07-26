@@ -9,7 +9,7 @@ import { useToastStore } from "@/store/toastStore";
 const API_BASE_URL =
   (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000").replace(/\/+$/, "");
 const SUPPORT_WHATSAPP_URL =
-  "https://wa.me/2349164716562?text=%2B2349164716562";
+  `https://wa.me/2349164716562?text=${encodeURIComponent("Hi Mando Support, I could not find my location.")}`;
 
 type ServiceArea = {
   id: string;
@@ -23,11 +23,15 @@ type SavedAddress = {
   label: string;
   streetAddress: string;
   isDefault: boolean;
-  serviceArea: ServiceArea;
+  serviceArea?: ServiceArea | null;
 };
 
 function formatAddress(address: SavedAddress) {
-  return `${address.streetAddress}, ${address.serviceArea.name}`;
+  return `${address.streetAddress}, ${address.serviceArea?.name ?? "Selected location"}`;
+}
+
+function buildLoginNext(nextPath: string) {
+  return `/login?next=${encodeURIComponent(`/customer/address?next=${nextPath}`)}`;
 }
 
 export default function AddressPage() {
@@ -39,6 +43,7 @@ export default function AddressPage() {
   const [street, setStreet] = useState("");
   const [loadingAreas, setLoadingAreas] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [nextPath, setNextPath] = useState("/customer/dashboard");
 
   const selectedServiceArea = serviceAreas.find((area) => area.id === selectedServiceAreaId);
   const addressPreview = street.trim() && selectedServiceArea
@@ -47,6 +52,9 @@ export default function AddressPage() {
 
   useEffect(() => {
     let mounted = true;
+
+    const next = new URLSearchParams(window.location.search).get("next") || "/customer/dashboard";
+    setNextPath(next);
 
     Promise.all([
       fetch(`${API_BASE_URL}/customer/service-areas`).then(async (response) => {
@@ -57,7 +65,11 @@ export default function AddressPage() {
       fetch(`${API_BASE_URL}/customer/addresses`, {
         credentials: "include",
       }).then(async (response) => {
-        if (response.status === 401) return { addresses: [] as SavedAddress[] };
+        if (response.status === 401) {
+          router.replace(buildLoginNext(next));
+          return { addresses: [] as SavedAddress[] };
+        }
+
         if (!response.ok) throw new Error("Unable to load saved addresses");
 
         return response.json() as Promise<{ addresses: SavedAddress[] }>;
@@ -84,7 +96,7 @@ export default function AddressPage() {
     return () => {
       mounted = false;
     };
-  }, [showToast]);
+  }, [router, showToast]);
 
   function clear() {
     setSelectedServiceAreaId(serviceAreas[0]?.id ?? "");
@@ -121,7 +133,7 @@ export default function AddressPage() {
 
       if (response.status === 401) {
         showToast("Please log in to save an address", "error");
-        router.push("/login");
+        router.push(buildLoginNext(nextPath));
         return;
       }
 
@@ -131,17 +143,7 @@ export default function AddressPage() {
       }
 
       showToast("Address saved successfully", "success");
-      await fetch(`${API_BASE_URL}/customer/addresses`, {
-        credentials: "include",
-      })
-        .then(async (response) => {
-          if (!response.ok) return null;
-          return response.json() as Promise<{ addresses: SavedAddress[] }>;
-        })
-        .then((data) => {
-          if (data) setSavedAddresses(data.addresses);
-        });
-      router.push("/customer/dashboard");
+      router.push(nextPath);
     } catch (error) {
       showToast(error instanceof Error ? error.message : "Unable to save address", "error");
     } finally {
@@ -152,7 +154,7 @@ export default function AddressPage() {
   return (
     <div className="p-6 pb-28">
       <header className="flex items-center mb-6">
-        <Link href="/customer/dashboard" className="flex items-center space-x-3">
+        <Link href={nextPath} className="flex items-center space-x-3">
           <ArrowLeftIcon />
           <span className="text-[24px] font-semibold">Address</span>
         </Link>
@@ -172,6 +174,7 @@ export default function AddressPage() {
             return (
               <button
                 key={area.id}
+                type="button"
                 onClick={() => setSelectedServiceAreaId(area.id)}
                 className={`px-4 py-2 rounded-md border ${
                   active ? "border-[#DFB400] bg-[#FFF7E0] text-[#000]" : "border-gray-300 text-[#6B6B6B]"
@@ -186,7 +189,7 @@ export default function AddressPage() {
 
       {savedAddresses.length > 0 ? (
         <section className="mb-8">
-          <h3 className="text-sm text-[#A4A4A4] mb-3">Saved addresses</h3>
+          <h3 className="text-sm text-[#A4A4A4] mb-3">Saved address</h3>
           <div className="space-y-3">
             {savedAddresses.map((address) => (
               <div key={address.id} className="rounded-xl border border-gray-200 bg-white p-4">
@@ -217,31 +220,33 @@ export default function AddressPage() {
             className="w-full focus:outline-none text-[14px]"
           />
         </div>
-          {addressPreview ? (
-            <p className="mt-3 rounded-xl bg-[#FFF7E0] px-4 py-3 text-sm font-semibold text-[#141B34]">
-              {addressPreview}
-            </p>
-          ) : null}
-          <div className="mt-3 flex justify-end">
-            <a
-              href={SUPPORT_WHATSAPP_URL}
-              target="_blank"
-              rel="noreferrer"
-              className="text-sm font-semibold text-[#DFB400]"
-            >
-              Can&apos;t find your location?
-            </a>
-          </div>
+        {addressPreview ? (
+          <p className="mt-3 rounded-xl bg-[#FFF7E0] px-4 py-3 text-sm font-semibold text-[#141B34]">
+            {addressPreview}
+          </p>
+        ) : null}
+        <div className="mt-3 flex justify-end">
+          <a
+            href={SUPPORT_WHATSAPP_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="text-sm font-semibold text-[#DFB400]"
+          >
+            Can&apos;t find your location?
+          </a>
+        </div>
       </section>
 
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t p-4 flex gap-3">
-        <button onClick={clear} className="flex-1 py-3 rounded-md border border-gray-300 text-gray-600">
+        <button type="button" onClick={clear} className="flex-1 py-3 rounded-md border border-gray-300 text-gray-600">
           Clear
         </button>
-        <button disabled={saving} onClick={save} className="flex-1 py-3 rounded-md bg-[#DFB400] text-white font-semibold disabled:opacity-60">
+        <button type="button" disabled={saving} onClick={save} className="flex-1 py-3 rounded-md bg-[#DFB400] text-white font-semibold disabled:opacity-60">
           {saving ? "Saving..." : "Save address"}
         </button>
       </div>
     </div>
   );
 }
+
+

@@ -1875,6 +1875,11 @@ async function selectCheckoutSettings(
         .from(adminSettings)
         .where(eq(adminSettings.settingsKey, 'service_charges'))
         .limit(1)
+  const [deliverySettings] = await database
+    .select({ value: adminSettings.value })
+    .from(adminSettings)
+    .where(eq(adminSettings.settingsKey, 'operations_delivery_pricing'))
+    .limit(1)
 
   const value = (settings?.value ?? legacySettings?.value) as
     | {
@@ -1892,6 +1897,21 @@ async function selectCheckoutSettings(
         areaCharges[`${serviceArea.name}, ${serviceArea.city ?? ''}`.trim()],
       )
     : null
+  const deliveryValue = deliverySettings?.value as
+    | {
+        minimumFeeAmount?: unknown
+        deliveryFeeAmount?: unknown
+        serviceAreaOverrides?: Array<{
+          serviceAreaId?: unknown
+          deliveryFeeAmount?: unknown
+        }>
+      }
+    | undefined
+  const areaDeliveryFee = serviceArea
+    ? deliveryValue?.serviceAreaOverrides?.find(
+        (override) => override.serviceAreaId === serviceArea.id,
+      )?.deliveryFeeAmount
+    : null
 
   return {
     serviceChargeAmount:
@@ -1900,9 +1920,15 @@ async function selectCheckoutSettings(
         ? value.serviceChargeAmount
         : SERVICE_CHARGE_AMOUNT),
     deliveryFeeAmount:
-      typeof value?.deliveryFeeAmount === 'number'
-        ? value.deliveryFeeAmount
-        : DELIVERY_FEE_AMOUNT,
+      typeof areaDeliveryFee === 'number'
+        ? areaDeliveryFee
+        : typeof deliveryValue?.minimumFeeAmount === 'number'
+          ? deliveryValue.minimumFeeAmount
+          : typeof deliveryValue?.deliveryFeeAmount === 'number'
+            ? deliveryValue.deliveryFeeAmount
+            : typeof value?.deliveryFeeAmount === 'number'
+              ? value.deliveryFeeAmount
+              : DELIVERY_FEE_AMOUNT,
   }
 }
 
@@ -1938,6 +1964,7 @@ function isValidBirthdayInput(value: string) {
     parsedDate.getUTCDate() === day
   )
 }
+
 
 
 

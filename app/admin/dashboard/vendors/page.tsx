@@ -980,7 +980,7 @@ function AddItemModal({
           <FormField label="Category" name="category" placeholder="Rice dishes" />
           <FormField label="Client's price" name="clientPrice" type="number" placeholder="2500" />
           <FormField label="Mando's price" name="mandoPrice" type="number" placeholder="250" />
-          <SelectField label="Item type" name="isSubItem" options={["No", "Yes"]} defaultValue="No" />
+          <SelectField label="Sub Item?" name="isSubItem" options={["No", "Yes"]} defaultValue="No" />
         </div>
 
         <ModalActions cancelLabel="Cancel" actionLabel={saving ? "Processing..." : "Add item"} onCancel={onClose} disabled={saving} />
@@ -1080,8 +1080,8 @@ function EditItemModal({
             defaultValue={String(item.mandoShare)}
             placeholder="250"
           />
-          <SelectField label="Item type" name="isSubItem" options={["No", "Yes"]} defaultValue={item.isSubItem ? "Yes" : "No"} />
-          <SelectField label="Availability" name="status" options={["available", "unavailable"]} defaultValue={item.status === "unavailable" ? "unavailable" : "available"} />
+          <SelectField key={`sub-item-${item.id}-${item.isSubItem ? "yes" : "no"}`} label="Sub Item?" name="isSubItem" options={["No", "Yes"]} defaultValue={item.isSubItem ? "Yes" : "No"} />
+          <SelectField key={`availability-${item.id}-${item.status}`} label="Availability" name="status" options={["available", "unavailable"]} defaultValue={item.status === "unavailable" ? "unavailable" : "available"} />
         </div>
 
         <ModalActions
@@ -1565,5 +1565,6 @@ function formatDate(value: string) {
 }
 
 export default AdminVendorsPage;
+
 
 

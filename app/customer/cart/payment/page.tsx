@@ -77,7 +77,7 @@ export default function PaymentPage() {
 
         if (!addressResponse.ok) {
           showToast("Please add a delivery address", "error");
-          router.replace("/customer/cart/change-address");
+          router.replace("/customer/address?next=/customer/cart");
           return;
         }
 
@@ -86,7 +86,7 @@ export default function PaymentPage() {
 
         if (!hasAddress) {
           showToast("Please add a delivery address", "error");
-          router.replace("/customer/cart/change-address");
+          router.replace("/customer/address?next=/customer/cart");
           return;
         }
 
@@ -280,3 +280,4 @@ function getResponseMessage(value: unknown) {
 
   return null;
 }
+

@@ -219,7 +219,7 @@ const CartPage = () => {
 
     if (!hasDeliveryAddress) {
       showToast("Please add a delivery address", "error");
-      router.push("/customer/cart/change-address");
+      router.push("/customer/address?next=/customer/cart");
       return;
     }
 
@@ -377,7 +377,7 @@ const CartPage = () => {
           </div>
 
           <div className="flex flex-col items-end gap-2">
-            <Link href="/customer/cart/change-address" className="underline text-[#DFB400]">
+            <Link href="/customer/address?next=/customer/cart" className="underline text-[#DFB400]">
               Change address
             </Link>
             <button
@@ -571,3 +571,4 @@ function getResponseMessage(value: unknown) {
 }
 
 export default CartPage;
+
