@@ -128,7 +128,8 @@ export default function AdminFoodCombosPage() {
       method: "DELETE",
       credentials: "include",
     });
-    setNotice(response.ok ? "Combo removed." : "Unable to remove combo.");
+    const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+    setNotice(response.ok ? payload?.message ?? "Combo removed." : payload?.message ?? "Unable to remove combo.");
     if (response.ok) await loadCombos();
   }
 
@@ -299,8 +300,8 @@ function ComboModal({ mode, combo, restaurants, serviceAreas, menuItemsByRestaur
             flyerUrl: campaignFlyerUrl ?? combo?.campaign?.flyerUrl ?? null,
             flyerPublicId: combo?.campaign?.flyerPublicId ?? null,
             content: formData.get("campaignContent"),
-            startsAt: formData.get("campaignStartsAt") || null,
-            endsAt: formData.get("campaignEndsAt") || null,
+            startsAt: serializeDateTimeInput(formData.get("campaignStartsAt")),
+            endsAt: serializeDateTimeInput(formData.get("campaignEndsAt")),
             status: formData.get("campaignStatus") || "draft",
           },
           items,
@@ -551,6 +552,14 @@ function formatScheduleDate(value: string | null | undefined) {
   }).format(date);
 }
 
+function serializeDateTimeInput(value: FormDataEntryValue | null) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString();
+}
+
 function formatDateTimeInput(value: string | null | undefined) {
   if (!value) return "";
   const date = new Date(value);
@@ -558,3 +567,4 @@ function formatDateTimeInput(value: string | null | undefined) {
   const offsetMs = date.getTimezoneOffset() * 60 * 1000;
   return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
 }
+

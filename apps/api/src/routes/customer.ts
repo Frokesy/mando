@@ -176,9 +176,14 @@ export async function customerRoutes(app: FastifyInstance) {
     })
   })
 
-  app.get('/checkout-settings', async (_request, reply) => {
+  app.get('/checkout-settings', async (request, reply) => {
+    const sessionContext = await getCurrentSessionContext(request.headers.cookie)
+    const defaultAddress = sessionContext
+      ? await getDefaultUserAddressDetails(sessionContext.userId)
+      : null
+
     return reply.status(200).send({
-      checkoutSettings: await selectCheckoutSettings(),
+      checkoutSettings: await selectCheckoutSettings(defaultAddress?.serviceArea ?? null),
     })
   })
 
@@ -794,7 +799,7 @@ export async function customerRoutes(app: FastifyInstance) {
       (total, item) => total + item.lineTotalAmount,
       0,
     )
-    const checkoutSettings = await selectCheckoutSettings()
+    const checkoutSettings = await selectCheckoutSettings(deliveryAddress.serviceArea)
     const deliveryFeeAmount = checkoutSettings.deliveryFeeAmount
     const serviceChargeAmount = checkoutSettings.serviceChargeAmount
     const discountAmount = calculateCheckoutDiscount(body.promoCode, subtotalAmount)
@@ -1358,7 +1363,7 @@ function getComboComponents(comboIds: string[]) {
     })
     .from(comboItems)
     .innerJoin(menuItems, eq(comboItems.menuItemId, menuItems.id))
-    .where(inArray(comboItems.comboId, comboIds))
+    .where(and(inArray(comboItems.comboId, comboIds), eq(menuItems.isAvailable, true)))
 }
 
 async function getUnqualifiedCustomerReferral(customerId: string) {
@@ -1854,22 +1859,46 @@ function sendOrderNotFound(reply: FastifyReply) {
   })
 }
 
-async function selectCheckoutSettings() {
+async function selectCheckoutSettings(
+  serviceArea?: { id: string; name: string; city?: string; state?: string } | null,
+) {
   const [settings] = await database
     .select({ value: adminSettings.value })
     .from(adminSettings)
-    .where(eq(adminSettings.settingsKey, 'service_charges'))
+    .where(eq(adminSettings.settingsKey, 'financial_service_charges'))
     .limit(1)
 
-  const value = settings?.value as
-    | { serviceChargeAmount?: unknown; deliveryFeeAmount?: unknown }
+  const [legacySettings] = settings
+    ? [null]
+    : await database
+        .select({ value: adminSettings.value })
+        .from(adminSettings)
+        .where(eq(adminSettings.settingsKey, 'service_charges'))
+        .limit(1)
+
+  const value = (settings?.value ?? legacySettings?.value) as
+    | {
+        serviceChargeAmount?: unknown
+        deliveryFeeAmount?: unknown
+        serviceChargesByArea?: Record<string, unknown>
+      }
     | undefined
+
+  const areaCharges = value?.serviceChargesByArea ?? {}
+  const areaSpecificCharge = serviceArea
+    ? firstNumber(
+        areaCharges[serviceArea.id],
+        areaCharges[serviceArea.name],
+        areaCharges[`${serviceArea.name}, ${serviceArea.city ?? ''}`.trim()],
+      )
+    : null
 
   return {
     serviceChargeAmount:
-      typeof value?.serviceChargeAmount === 'number'
+      areaSpecificCharge ??
+      (typeof value?.serviceChargeAmount === 'number'
         ? value.serviceChargeAmount
-        : SERVICE_CHARGE_AMOUNT,
+        : SERVICE_CHARGE_AMOUNT),
     deliveryFeeAmount:
       typeof value?.deliveryFeeAmount === 'number'
         ? value.deliveryFeeAmount
@@ -1877,6 +1906,12 @@ async function selectCheckoutSettings() {
   }
 }
 
+function firstNumber(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === 'number' && Number.isFinite(value)) return value
+  }
+  return null
+}
 function calculateCheckoutDiscount(promoCode: string | null | undefined, subtotalAmount: number) {
   const code = promoCode?.trim().toUpperCase()
   if (!code) return 0
@@ -1903,3 +1938,6 @@ function isValidBirthdayInput(value: string) {
     parsedDate.getUTCDate() === day
   )
 }
+
+
+

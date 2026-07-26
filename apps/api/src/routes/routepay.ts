@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, or } from 'drizzle-orm'
 import { z } from 'zod'
 
 import { getCurrentSessionContext } from '../auth/current-session.js'
@@ -224,6 +224,10 @@ async function handleRoutePayWebhook(
     'MerchantReference',
     'merchant_reference',
     'reference',
+    'merchantRef',
+    'MerchantRef',
+    'orderReference',
+    'OrderReference',
   ])
   const transactionReference = getPayloadString(payload, [
     'transactionReference',
@@ -231,6 +235,8 @@ async function handleRoutePayWebhook(
     'transaction_reference',
     'paymentReference',
     'PaymentReference',
+    'transactionRef',
+    'TransactionRef',
   ])
   const status = getPayloadString(payload, [
     'status',
@@ -239,6 +245,10 @@ async function handleRoutePayWebhook(
     'PaymentStatus',
     'responseCode',
     'ResponseCode',
+    'responseMessage',
+    'ResponseMessage',
+    'message',
+    'Message',
   ])
 
   if (!merchantReference && !transactionReference) {
@@ -326,13 +336,16 @@ async function findRoutePayPayment(input: {
   merchantReference: string | null
   transactionReference: string | null
 }) {
-  const whereClause = input.transactionReference
-    ? eq(payments.providerReference, input.transactionReference)
-    : input.merchantReference
+  const clauses = [
+    input.transactionReference
+      ? eq(payments.providerReference, input.transactionReference)
+      : null,
+    input.merchantReference
       ? eq(payments.customerReference, input.merchantReference)
-      : undefined
+      : null,
+  ].filter((clause): clause is NonNullable<typeof clause> => Boolean(clause))
 
-  if (!whereClause) return null
+  if (!clauses.length) return null
 
   const [payment] = await database
     .select({
@@ -346,12 +359,11 @@ async function findRoutePayPayment(input: {
     })
     .from(payments)
     .innerJoin(orders, eq(payments.orderId, orders.id))
-    .where(whereClause)
+    .where(clauses.length === 1 ? clauses[0] : or(...clauses))
     .limit(1)
 
   return payment ?? null
 }
-
 async function finalizePaidOrder(
   order: PayableOrder,
   options: { actorUserId?: string; note: string },
@@ -463,9 +475,16 @@ function isSuccessfulRoutePayStatus(status: string | null) {
   if (!status) return false
   const normalized = status.toLowerCase()
 
-  return ['00', 'success', 'successful', 'paid', 'completed', 'verified'].includes(
-    normalized,
-  )
+  return [
+    '00',
+    'success',
+    'successful',
+    'paid',
+    'completed',
+    'verified',
+    'payment successful',
+    'transaction successful',
+  ].includes(normalized)
 }
 
 function isFailedRoutePayStatus(status: string | null) {
@@ -487,3 +506,5 @@ function sendUnauthenticated(reply: FastifyReply) {
       message: 'Please log in to continue.',
     })
 }
+
+

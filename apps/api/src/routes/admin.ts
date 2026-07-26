@@ -1464,8 +1464,18 @@ export async function adminRoutes(app: FastifyInstance) {
       })
     }
 
-    await database.delete(combos).where(eq(combos.id, parsedParams.data.comboId))
-    return reply.status(200).send({ ok: true })
+    try {
+      await database.delete(combos).where(eq(combos.id, parsedParams.data.comboId))
+      return reply.status(200).send({ ok: true })
+    } catch (error) {
+      if (isForeignKeyViolation(error)) {
+        return reply.status(409).send({
+          error: 'combo_has_orders',
+          message: 'This combo cannot be removed because orders have been placed for it. You can mark it as "sold out" instead.',
+        })
+      }
+      throw error
+    }
   })
 
   app.get('/sales', async (_request, reply) => {
@@ -2511,8 +2521,18 @@ async function selectAdminFoodComboDetail(comboId: string) {
 
 function parseOptionalDate(value: string | null | undefined) {
   if (!value) return null
-  const date = new Date(value)
+  // The value comes from datetime-local input as "YYYY-MM-DDTHH:MM" in local time.
+  // Append a timezone offset so it's stored as the exact time the admin selected.
+  const date = new Date(value + (value.includes('+') || value.endsWith('Z') ? '' : getLocalTimezoneOffset()))
   return Number.isNaN(date.getTime()) ? null : date
+}
+
+function getLocalTimezoneOffset() {
+  const offset = -new Date().getTimezoneOffset()
+  const sign = offset >= 0 ? '+' : '-'
+  const hours = String(Math.floor(Math.abs(offset) / 60)).padStart(2, '0')
+  const minutes = String(Math.abs(offset) % 60).padStart(2, '0')
+  return `${sign}${hours}:${minutes}`
 }
 
 async function selectAdminComboCampaign(comboId: string) {
@@ -3978,3 +3998,4 @@ function isForeignKeyViolation(error: unknown) {
     (error instanceof Error && error.message.includes('violates foreign key constraint'))
   )
 }
+

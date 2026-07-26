@@ -24,6 +24,7 @@ import {
   restaurantEarnings,
   restaurants,
   riderProfiles,
+  riderServiceAreas,
   serviceAreas,
   users,
 } from '../db/schema.js'
@@ -227,7 +228,7 @@ export async function riderRoutes(app: FastifyInstance) {
 
       const [availablePickups, activeDeliveries, recentDeliveries] =
         await Promise.all([
-          listAvailablePickups(rider.rider.serviceArea.id),
+          listAvailablePickups(rider.rider.serviceAreas.map((area) => area.id)),
           listActiveDeliveries(auth.userId),
           listDeliveryHistory(auth.userId, 5),
         ])
@@ -265,7 +266,7 @@ export async function riderRoutes(app: FastifyInstance) {
       if (!rider) return sendRiderProfileNotFound(reply)
 
       return reply.status(200).send({
-        orders: await listAvailablePickups(rider.rider.serviceArea.id),
+        orders: await listAvailablePickups(rider.rider.serviceAreas.map((area) => area.id)),
       })
     } catch (error) {
       request.log.error(error)
@@ -448,7 +449,9 @@ async function updateDeliveryAssignment(
     .where(eq(orders.id, parsedParams.data.orderId))
     .limit(1)
 
-  if (!target || target.serviceAreaId !== rider.rider.serviceArea.id) {
+  const assignedServiceAreaIds = rider.rider.serviceAreas.map((area) => area.id)
+
+  if (!target || !assignedServiceAreaIds.includes(target.serviceAreaId)) {
     return reply.status(404).send({
       error: 'delivery_not_found',
       message: 'Delivery not found for your assigned area.',
@@ -715,6 +718,26 @@ async function getRiderProfile(userId: string) {
 
   if (!row) return null
 
+  const assignedAreaRows = await database
+    .select({
+      id: serviceAreas.id,
+      name: serviceAreas.name,
+      city: serviceAreas.city,
+      state: serviceAreas.state,
+    })
+    .from(riderServiceAreas)
+    .innerJoin(serviceAreas, eq(riderServiceAreas.serviceAreaId, serviceAreas.id))
+    .where(eq(riderServiceAreas.riderId, userId))
+
+  const assignedServiceAreas = assignedAreaRows.length
+    ? assignedAreaRows
+    : [{
+        id: row.serviceAreaId,
+        name: row.serviceAreaName,
+        city: row.serviceAreaCity,
+        state: row.serviceAreaState,
+      }]
+
   return {
     user: {
       id: row.userId,
@@ -729,17 +752,12 @@ async function getRiderProfile(userId: string) {
     rider: {
       riderCode: row.riderCode,
       availabilityStatus: row.availabilityStatus,
-      serviceArea: {
-        id: row.serviceAreaId,
-        name: row.serviceAreaName,
-        city: row.serviceAreaCity,
-        state: row.serviceAreaState,
-      },
+      serviceArea: assignedServiceAreas[0],
+      serviceAreas: assignedServiceAreas,
     },
   }
 }
-
-async function listAvailablePickups(serviceAreaId: string) {
+async function listAvailablePickups(serviceAreaIds: string[]) {
   const rows = await database
     .select(deliverySelectFields())
     .from(deliveries)
@@ -747,7 +765,7 @@ async function listAvailablePickups(serviceAreaId: string) {
     .innerJoin(restaurants, eq(orders.restaurantId, restaurants.id))
     .where(
       and(
-        eq(deliveries.serviceAreaId, serviceAreaId),
+        inArray(deliveries.serviceAreaId, serviceAreaIds.length ? serviceAreaIds : ["00000000-0000-0000-0000-000000000000"]),
         inArray(deliveries.status, ['unassigned', 'available']),
         eq(orders.status, 'ready_for_pickup'),
       ),
@@ -952,3 +970,5 @@ function sendUnauthenticated(reply: FastifyReply) {
       message: 'Please log in to continue.',
     })
 }
+
+

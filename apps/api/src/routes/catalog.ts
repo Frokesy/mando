@@ -107,7 +107,7 @@ export async function catalogRoutes(app: FastifyInstance) {
       })
       .from(comboItems)
       .innerJoin(menuItems, eq(comboItems.menuItemId, menuItems.id))
-      .where(eq(comboItems.comboId, combo.id))
+      .where(and(eq(comboItems.comboId, combo.id), eq(menuItems.isAvailable, true)))
       .orderBy(asc(menuItems.name))
 
     return reply.status(200).send({
@@ -408,4 +408,5 @@ function serializeComboSummary(
     },
   }
 }
+
 

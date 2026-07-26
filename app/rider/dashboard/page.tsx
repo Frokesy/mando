@@ -50,6 +50,11 @@ type RiderDashboardData = {
         city: string;
         state: string;
       };
+      serviceAreas?: Array<{
+        name: string;
+        city: string;
+        state: string;
+      }>;
     };
   };
   stats: {
@@ -179,6 +184,9 @@ export default function RiderDashboard() {
   }
 
   const area = dashboard?.rider.rider.serviceArea;
+  const assignedAreaNames = dashboard?.rider.rider.serviceAreas?.length
+    ? dashboard.rider.rider.serviceAreas.map((assignedArea) => assignedArea.name).join(", ")
+    : area?.name;
 
   return (
     <motion.div
@@ -192,11 +200,11 @@ export default function RiderDashboard() {
           <div>
             <p className="text-sm font-semibold text-[#A4A4A4]">Rider dashboard</p>
             <h1 className="mt-2 text-2xl font-bold text-[#141B34]">
-              {loading ? "Loading route..." : `Active orders in ${area?.name ?? "your area"}`}
+              {loading ? "Loading route..." : `Active orders in ${assignedAreaNames ?? "your areas"}`}
             </h1>
             {dashboard && (
               <p className="mt-1 text-sm text-[#6B6B6B]">
-                {dashboard.rider.profile.fullName} - {area?.city}, {area?.state}
+                {dashboard.rider.profile.fullName} - {assignedAreaNames ?? `${area?.city}, ${area?.state}`}
               </p>
             )}
           </div>
@@ -479,3 +487,5 @@ function formatDate(value: string) {
     year: "numeric",
   }).format(new Date(value));
 }
+
+

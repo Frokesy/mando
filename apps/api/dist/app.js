@@ -1,5 +1,6 @@
 import cors from '@fastify/cors';
 import Fastify from 'fastify';
+import { addNoCacheHeaders } from './config/cache.js';
 import { authRoutes } from './routes/auth.js';
 import { adminRoutes } from './routes/admin.js';
 import { catalogRoutes } from './routes/catalog.js';
@@ -15,6 +16,8 @@ const defaultAllowedOrigins = [
     'http://127.0.0.1:3000',
     'http://127.0.0.1:3001',
     'https://mando-tan.vercel.app',
+    'https://www.mando.com.ng',
+    'https://mando.com.ng',
 ];
 export function buildApp(options = {}) {
     const app = Fastify({
@@ -41,6 +44,14 @@ export function buildApp(options = {}) {
     app.register(riderRoutes, { prefix: '/rider' });
     app.register(salesAgentRoutes, { prefix: '/sales-agent' });
     app.register(uploadRoutes, { prefix: '/uploads' });
+    // Add no-cache headers to all dynamic responses
+    app.addHook('onSend', async (_request, reply) => {
+        const url = _request.url;
+        // Skip static/health/healthcheck routes
+        if (url === '/health' || url === '/')
+            return;
+        addNoCacheHeaders(reply);
+    });
     app.get('/health', async () => {
         return {
             status: 'ok',

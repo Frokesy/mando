@@ -77,6 +77,7 @@ type VendorMenuItem = {
   mandoShare: number;
   vendorShare: number;
   status: string;
+  isSubItem?: boolean;
 };
 
 type VendorActivity = {
@@ -237,7 +238,8 @@ const AdminVendorsPage = () => {
 
       setConfirmDeleteItem(null);
       void refreshSelectedVendor();
-      showToast("Menu item deleted successfully", "success");
+      const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+      showToast(payload?.message ?? "Menu item removed from customer menus", "success");
     } catch (error) {
       showToast(error instanceof Error ? error.message : "Unable to delete menu item", "error");
     } finally {
@@ -490,7 +492,7 @@ const AdminVendorsPage = () => {
         <ConfirmationModal
           open
           title="Delete menu item"
-          description={`Are you sure you want to delete "${confirmDeleteItem.name}"? This action cannot be undone.`}
+          description={`Remove "${confirmDeleteItem.name}" from customer menus? Existing order history will stay intact.`}
           confirmLabel="Delete"
           cancelLabel="Cancel"
           confirming={deletingMenuItemId === confirmDeleteItem.id}
@@ -640,6 +642,11 @@ function MenuTab({
                   {item.description ? (
                     <p className="mt-1 text-[10px] text-[#6A7282]">{item.description}</p>
                   ) : null}
+                  <div className="mt-1 flex gap-1.5">
+                    {item.isSubItem ? (
+                      <span className="rounded-md bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700">Packaging</span>
+                    ) : null}
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
@@ -946,6 +953,7 @@ function AddItemModal({
           clientPrice,
           mandoPrice: formData.get("mandoPrice"),
           imageUrl,
+          isSubItem: formData.get("isSubItem") === "Yes",
         }),
       });
 
@@ -972,6 +980,7 @@ function AddItemModal({
           <FormField label="Category" name="category" placeholder="Rice dishes" />
           <FormField label="Client's price" name="clientPrice" type="number" placeholder="2500" />
           <FormField label="Mando's price" name="mandoPrice" type="number" placeholder="250" />
+          <SelectField label="Item type" name="isSubItem" options={["No", "Yes"]} defaultValue="No" />
         </div>
 
         <ModalActions cancelLabel="Cancel" actionLabel={saving ? "Processing..." : "Add item"} onCancel={onClose} disabled={saving} />
@@ -1022,6 +1031,8 @@ function EditItemModal({
             mandoPrice: formData.get("mandoPrice")
               ? Number(formData.get("mandoPrice"))
               : undefined,
+            isAvailable: formData.get("status") !== "unavailable",
+            isSubItem: formData.get("isSubItem") === "Yes",
           }),
         },
       );
@@ -1069,6 +1080,8 @@ function EditItemModal({
             defaultValue={String(item.mandoShare)}
             placeholder="250"
           />
+          <SelectField label="Item type" name="isSubItem" options={["No", "Yes"]} defaultValue={item.isSubItem ? "Yes" : "No"} />
+          <SelectField label="Availability" name="status" options={["available", "unavailable"]} defaultValue={item.status === "unavailable" ? "unavailable" : "available"} />
         </div>
 
         <ModalActions
@@ -1552,3 +1565,5 @@ function formatDate(value: string) {
 }
 
 export default AdminVendorsPage;
+
+

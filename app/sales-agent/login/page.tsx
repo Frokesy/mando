@@ -63,6 +63,11 @@ export default function SalesAgentLogin() {
 
       setAuth(result);
       showToast("Logged in as sales agent", "success");
+      if (typeof window !== "undefined") {
+        window.location.assign("/sales-agent/dashboard");
+        return;
+      }
+
       router.push("/sales-agent/dashboard");
     } catch (error) {
       showToast(
@@ -147,3 +152,5 @@ export default function SalesAgentLogin() {
     </motion.div>
   );
 }
+
+
