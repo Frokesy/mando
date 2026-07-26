@@ -984,6 +984,7 @@ export async function adminRoutes(app: FastifyInstance) {
         priceAmount: parsedBody.data.clientPrice,
         imageUrl: parsedBody.data.imageUrl,
         isAvailable: parsedBody.data.isAvailable,
+        isSubItem: parsedBody.data.isSubItem,
         updatedAt: new Date(),
       })
       .where(
@@ -998,6 +999,7 @@ export async function adminRoutes(app: FastifyInstance) {
         description: menuItems.description,
         priceAmount: menuItems.priceAmount,
         isAvailable: menuItems.isAvailable,
+        isSubItem: menuItems.isSubItem,
       })
 
     if (!item) {
@@ -1025,6 +1027,7 @@ export async function adminRoutes(app: FastifyInstance) {
         mandoShare,
         vendorShare: item.priceAmount - mandoShare,
         status: item.isAvailable ? 'available' : 'unavailable',
+        isSubItem: item.isSubItem,
       },
     })
   })
@@ -1852,6 +1855,7 @@ async function selectAdminVendorDetail(vendorId: string) {
         mandoShare,
         vendorShare: item.priceAmount - mandoShare,
         status: item.isAvailable ? 'available' : 'unavailable',
+        isSubItem: item.isSubItem,
       }
     }),
     activity: orderRows.map((order) => ({
@@ -3998,4 +4002,5 @@ function isForeignKeyViolation(error: unknown) {
     (error instanceof Error && error.message.includes('violates foreign key constraint'))
   )
 }
+
 

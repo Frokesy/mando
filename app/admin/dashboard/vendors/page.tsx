@@ -1003,6 +1003,10 @@ function EditItemModal({
   onSaved: () => void;
 }) {
   const [saving, setSaving] = useState(false);
+  const [subItemValue, setSubItemValue] = useState(item.isSubItem ? "Yes" : "No");
+  const [availabilityValue, setAvailabilityValue] = useState(
+    item.status === "unavailable" ? "unavailable" : "available",
+  );
 
   async function submitEdit(formData: FormData) {
     if (!vendor) return;
@@ -1031,8 +1035,8 @@ function EditItemModal({
             mandoPrice: formData.get("mandoPrice")
               ? Number(formData.get("mandoPrice"))
               : undefined,
-            isAvailable: formData.get("status") !== "unavailable",
-            isSubItem: formData.get("isSubItem") === "Yes",
+            isAvailable: availabilityValue !== "unavailable",
+            isSubItem: subItemValue === "Yes",
           }),
         },
       );
@@ -1080,8 +1084,30 @@ function EditItemModal({
             defaultValue={String(item.mandoShare)}
             placeholder="250"
           />
-          <SelectField key={`sub-item-${item.id}-${item.isSubItem ? "yes" : "no"}`} label="Sub Item?" name="isSubItem" options={["No", "Yes"]} defaultValue={item.isSubItem ? "Yes" : "No"} />
-          <SelectField key={`availability-${item.id}-${item.status}`} label="Availability" name="status" options={["available", "unavailable"]} defaultValue={item.status === "unavailable" ? "unavailable" : "available"} />
+          <label className="text-xs font-medium text-[#344054]">
+            Sub Item?
+            <select
+              name="isSubItem"
+              value={subItemValue}
+              onChange={(event) => setSubItemValue(event.target.value)}
+              className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-[#101828] outline-none focus:border-[#FE9A00]"
+            >
+              <option value="No">No</option>
+              <option value="Yes">Yes</option>
+            </select>
+          </label>
+          <label className="text-xs font-medium text-[#344054]">
+            Availability
+            <select
+              name="status"
+              value={availabilityValue}
+              onChange={(event) => setAvailabilityValue(event.target.value)}
+              className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-[#101828] outline-none focus:border-[#FE9A00]"
+            >
+              <option value="available">available</option>
+              <option value="unavailable">unavailable</option>
+            </select>
+          </label>
         </div>
 
         <ModalActions

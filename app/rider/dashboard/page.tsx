@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { FiBell, FiLogOut, FiRefreshCw } from "react-icons/fi";
+import { FiBell, FiChevronDown, FiLogOut, FiRefreshCw } from "react-icons/fi";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import RiderBottomNav from "@/components/RiderBottomNav";
 import { MoneyIcon, TimerIcon } from "@/components/svgs/DefaultIcons";
@@ -77,6 +77,7 @@ export default function RiderDashboard() {
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
   const [showLogoutConfirmation, setShowLogoutConfirmation] = useState(false);
+  const [showAssignedAreas, setShowAssignedAreas] = useState(false);
 
   const loadDashboard = useCallback(async () => {
     setLoading(true);
@@ -184,9 +185,13 @@ export default function RiderDashboard() {
   }
 
   const area = dashboard?.rider.rider.serviceArea;
-  const assignedAreaNames = dashboard?.rider.rider.serviceAreas?.length
-    ? dashboard.rider.rider.serviceAreas.map((assignedArea) => assignedArea.name).join(", ")
-    : area?.name;
+  const assignedAreas = dashboard?.rider.rider.serviceAreas?.length
+    ? dashboard.rider.rider.serviceAreas
+    : area
+      ? [area]
+      : [];
+  const assignedAreaLabel =
+    assignedAreas.length > 1 ? `${assignedAreas.length} assigned areas` : assignedAreas[0]?.name ?? "your areas";
 
   return (
     <motion.div
@@ -200,12 +205,37 @@ export default function RiderDashboard() {
           <div>
             <p className="text-sm font-semibold text-[#A4A4A4]">Rider dashboard</p>
             <h1 className="mt-2 text-2xl font-bold text-[#141B34]">
-              {loading ? "Loading route..." : `Active orders in ${assignedAreaNames ?? "your areas"}`}
+              {loading ? "Loading route..." : `Active orders in ${assignedAreaLabel}`}
             </h1>
             {dashboard && (
-              <p className="mt-1 text-sm text-[#6B6B6B]">
-                {dashboard.rider.profile.fullName} - {assignedAreaNames ?? `${area?.city}, ${area?.state}`}
-              </p>
+              <div className="relative mt-2 inline-flex">
+                <button
+                  type="button"
+                  onClick={() => setShowAssignedAreas((current) => !current)}
+                  className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-[#6B6B6B] shadow-sm"
+                >
+                  {dashboard.rider.profile.fullName} - {assignedAreaLabel}
+                  <FiChevronDown className={`transition ${showAssignedAreas ? "rotate-180" : ""}`} />
+                </button>
+                {showAssignedAreas ? (
+                  <div className="absolute left-0 top-full z-20 mt-2 w-56 rounded-2xl border border-gray-100 bg-white p-2 shadow-xl">
+                    <div className="max-h-56 space-y-1 overflow-y-auto">
+                      {assignedAreas.length ? (
+                        assignedAreas.map((assignedArea, index) => (
+                          <div key={`${assignedArea.name}-${index}`} className="rounded-xl bg-[#F9FAFB] px-3 py-2 text-xs font-semibold text-[#344054]">
+                            <p>{assignedArea.name}</p>
+                            <p className="mt-0.5 text-[10px] font-medium text-[#98A2B3]">
+                              {assignedArea.city}, {assignedArea.state}
+                            </p>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="px-3 py-2 text-xs text-[#98A2B3]">No assigned area yet.</p>
+                      )}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             )}
           </div>
           <div className="flex items-center gap-2">

@@ -6,6 +6,7 @@ import {
   FaBan,
   FaBicycle,
   FaCarSide,
+  FaChevronDown,
   FaDownload,
   FaEllipsisH,
   FaFilter,
@@ -277,7 +278,7 @@ export default function AdminRidersPage() {
                 <RiderIdentity rider={rider} />
                 <StatusPill status={rider.status} />
                 <AvailabilityPill availability={rider.availability} />
-                <p>{rider.location}</p>
+                <ServiceAreaButton location={rider.location} />
                 <p>{rider.vehicleType}</p>
                 <p>{rider.orders}</p>
                 <p>{rider.rating.toFixed(1)}</p>
@@ -300,6 +301,10 @@ export default function AdminRidersPage() {
               <DetailRow label="Email address" value={selectedRider.email} />
               <DetailRow label="Phone number" value={selectedRider.phone} />
               <DetailRow label="Address" value={selectedRider.address} />
+              <div className="flex items-center justify-between gap-4 rounded-lg bg-gray-50 px-3 py-2 text-[10px]">
+                <span className="font-semibold text-[#6A7282]">Assigned areas</span>
+                <ServiceAreaButton location={selectedRider.location} align="right" />
+              </div>
             </PanelSection>
 
             <PanelSection title="Vehicle Details">
@@ -640,6 +645,43 @@ function RiderIdentity({ rider, large }: { rider: Rider; large?: boolean }) {
         <h3 className={`${large ? "text-sm" : "text-[10px]"} truncate font-semibold text-[#101828]`}>{rider.name}</h3>
         <p className="truncate text-[10px] text-[#99A1AF]">{rider.phone}</p>
       </div>
+    </div>
+  );
+}
+
+function ServiceAreaButton({ location, align = "left" }: { location: string; align?: "left" | "right" }) {
+  const [open, setOpen] = useState(false);
+  const areas = location
+    .split(",")
+    .map((area) => area.trim())
+    .filter(Boolean);
+  const label = areas.length > 1 ? `${areas.length} areas` : areas[0] ?? "No area";
+
+  return (
+    <div className="relative inline-flex" onClick={(event) => event.stopPropagation()}>
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-[10px] font-semibold text-[#344054] shadow-sm hover:border-[#FE9A00]"
+      >
+        {label}
+        <FaChevronDown className={`text-[9px] transition ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open ? (
+        <div className={`absolute top-full z-20 mt-2 w-52 rounded-xl border border-gray-100 bg-white p-2 shadow-xl ${align === "right" ? "right-0" : "left-0"}`}>
+          <div className="max-h-52 space-y-1 overflow-y-auto">
+            {areas.length ? (
+              areas.map((area, index) => (
+                <div key={`${area}-${index}`} className="rounded-lg bg-[#F9FAFB] px-3 py-2 text-[10px] font-semibold text-[#344054]">
+                  {area}
+                </div>
+              ))
+            ) : (
+              <p className="px-3 py-2 text-[10px] text-[#99A1AF]">No service area assigned.</p>
+            )}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
