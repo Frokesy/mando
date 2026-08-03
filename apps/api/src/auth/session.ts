@@ -57,7 +57,7 @@ export function serializeSessionCookie(session: SessionToken) {
     Math.floor((session.expiresAt.getTime() - Date.now()) / 1000),
   )
   const isProduction = process.env.NODE_ENV === 'production'
-  const sameSite = process.env.SESSION_COOKIE_SAMESITE ?? (isProduction ? 'None' : 'Lax')
+  const sameSite = process.env.SESSION_COOKIE_SAMESITE ?? 'Lax'
   const secure =
     sameSite === 'None' || isProduction || process.env.SESSION_COOKIE_SECURE === 'true'
       ? '; Secure'
@@ -84,7 +84,7 @@ export function serializeSessionCookie(session: SessionToken) {
 export function serializeClearSessionCookie() {
   const { sessionCookieName, sessionCookieDomain } = getAuthConfig()
   const isProduction = process.env.NODE_ENV === 'production'
-  const sameSite = process.env.SESSION_COOKIE_SAMESITE ?? (isProduction ? 'None' : 'Lax')
+  const sameSite = process.env.SESSION_COOKIE_SAMESITE ?? 'Lax'
   const secure =
     sameSite === 'None' || isProduction || process.env.SESSION_COOKIE_SECURE === 'true'
       ? '; Secure'
