@@ -58,7 +58,12 @@ export function serializeSessionCookie(session: SessionToken) {
   )
   const isProduction = process.env.NODE_ENV === 'production'
   const sameSite = process.env.SESSION_COOKIE_SAMESITE ?? (isProduction ? 'None' : 'Lax')
-  const secure = isProduction || process.env.SESSION_COOKIE_SECURE === 'true' ? '; Secure' : ''
+  const secure =
+    sameSite === 'None' || isProduction || process.env.SESSION_COOKIE_SECURE === 'true'
+      ? '; Secure'
+      : ''
+  const partitioned =
+    process.env.SESSION_COOKIE_PARTITIONED === 'true' ? '; Partitioned' : ''
   const domain = sessionCookieDomain ? `; Domain=${sessionCookieDomain}` : ''
 
   return [
@@ -70,6 +75,7 @@ export function serializeSessionCookie(session: SessionToken) {
     `Expires=${session.expiresAt.toUTCString()}`,
     domain,
     secure,
+    partitioned,
   ]
     .filter(Boolean)
     .join('; ')
@@ -79,7 +85,12 @@ export function serializeClearSessionCookie() {
   const { sessionCookieName, sessionCookieDomain } = getAuthConfig()
   const isProduction = process.env.NODE_ENV === 'production'
   const sameSite = process.env.SESSION_COOKIE_SAMESITE ?? (isProduction ? 'None' : 'Lax')
-  const secure = isProduction || process.env.SESSION_COOKIE_SECURE === 'true' ? '; Secure' : ''
+  const secure =
+    sameSite === 'None' || isProduction || process.env.SESSION_COOKIE_SECURE === 'true'
+      ? '; Secure'
+      : ''
+  const partitioned =
+    process.env.SESSION_COOKIE_PARTITIONED === 'true' ? '; Partitioned' : ''
   const domain = sessionCookieDomain ? `; Domain=${sessionCookieDomain}` : ''
 
   return [
@@ -91,6 +102,7 @@ export function serializeClearSessionCookie() {
     'Expires=Thu, 01 Jan 1970 00:00:00 GMT',
     domain,
     secure,
+    partitioned,
   ]
     .filter(Boolean)
     .join('; ')
