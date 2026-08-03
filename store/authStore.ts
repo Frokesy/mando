@@ -47,23 +47,37 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ loading: true });
 
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/me`, {
-        credentials: "include",
-      });
+      let lastResponse: Response | null = null;
 
-      if (!response.ok) {
-        set({ auth: null });
-        return null;
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        const response = await fetch(`${API_BASE_URL}/auth/me`, {
+          credentials: "include",
+          cache: "no-store",
+        });
+
+        lastResponse = response;
+
+        if (response.ok) {
+          const auth = (await response.json()) as AuthPayload;
+          if (requiredRole && !auth.roles.includes(requiredRole)) {
+            set({ auth: null });
+            return null;
+          }
+
+          set({ auth });
+          return auth;
+        }
+
+        if (attempt < 3) {
+          await new Promise((resolve) => window.setTimeout(resolve, 250 * attempt));
+        }
       }
 
-      const auth = (await response.json()) as AuthPayload;
-      if (requiredRole && !auth.roles.includes(requiredRole)) {
+      if (lastResponse && !lastResponse.ok) {
         set({ auth: null });
-        return null;
       }
 
-      set({ auth });
-      return auth;
+      return null;
     } finally {
       set({ loading: false });
     }

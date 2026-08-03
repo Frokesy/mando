@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { FaEye, FaEyeSlash } from "react-icons/fa";
 import { PasswordIcon } from "@/components/svgs/DefaultIcons";
+import { useAuthStore } from "@/store/authStore";
 import { useToastStore } from "@/store/toastStore";
 
 const API_BASE_URL =
@@ -11,6 +12,7 @@ const API_BASE_URL =
 
 const AdminLogin = () => {
   const router = useRouter();
+  const fetchCurrentUser = useAuthStore((s) => s.fetchCurrentUser);
   const showToast = useToastStore((s) => s.showToast);
   const [formData, setFormData] = useState({ email: "", password: "" });
   const [showPassword, setShowPassword] = useState(false);
@@ -33,6 +35,12 @@ const AdminLogin = () => {
 
       if (!response.ok) {
         throw new Error(result?.message ?? "Unable to sign in as admin");
+      }
+
+      const freshAuth = await fetchCurrentUser();
+
+      if (!freshAuth) {
+        throw new Error("Login succeeded, but your session could not be confirmed on this device. Please retry once more.");
       }
 
       showToast("Logged in as admin", "success");

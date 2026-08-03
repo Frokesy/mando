@@ -126,7 +126,7 @@ export default function Login() {
       const freshAuth = await fetchCurrentUser();
 
       if (!freshAuth) {
-        throw new Error("Login succeeded, but your session could not be confirmed. Please try again.");
+        throw new Error("Login succeeded, but your session could not be confirmed on this device. Please retry once more.");
       }
 
       showToast("Logged in successfully", "success");

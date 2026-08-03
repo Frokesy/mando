@@ -13,6 +13,7 @@ const API_BASE_URL =
 export default function RiderLogin() {
   const router = useRouter();
   const setAuth = useAuthStore((s) => s.setAuth);
+  const fetchCurrentUser = useAuthStore((s) => s.fetchCurrentUser);
   const showToast = useToastStore((s) => s.showToast);
   const [formData, setFormData] = useState({ code: "", password: "" });
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -63,6 +64,12 @@ export default function RiderLogin() {
       }
 
       const auth = await response.json();
+      const freshAuth = await fetchCurrentUser();
+
+      if (!freshAuth) {
+        throw new Error("Login succeeded, but your session could not be confirmed on this device. Please retry once more.");
+      }
+
       setAuth(auth);
       showToast("Logged in as rider", "success");
       router.push("/rider/dashboard");

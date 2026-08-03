@@ -13,6 +13,7 @@ const API_BASE_URL =
 export default function RestaurantLogin() {
   const router = useRouter();
   const setAuth = useAuthStore((s) => s.setAuth);
+  const fetchCurrentUser = useAuthStore((s) => s.fetchCurrentUser);
   const showToast = useToastStore((s) => s.showToast);
   const [formData, setFormData] = useState({ email: "", password: "" });
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -58,6 +59,12 @@ export default function RestaurantLogin() {
 
       if (!response.ok) {
         throw new Error(result?.message ?? "Unable to sign in as restaurant");
+      }
+
+      const freshAuth = await fetchCurrentUser();
+
+      if (!freshAuth) {
+        throw new Error("Login succeeded, but your session could not be confirmed on this device. Please retry once more.");
       }
 
       setAuth(result);
