@@ -51,7 +51,7 @@ export function getSessionTokenFromCookie(cookieHeader: string | undefined) {
 }
 
 export function serializeSessionCookie(session: SessionToken) {
-  const { sessionCookieName } = getAuthConfig()
+  const { sessionCookieName, sessionCookieDomain } = getAuthConfig()
   const maxAgeSeconds = Math.max(
     0,
     Math.floor((session.expiresAt.getTime() - Date.now()) / 1000),
@@ -59,6 +59,7 @@ export function serializeSessionCookie(session: SessionToken) {
   const isProduction = process.env.NODE_ENV === 'production'
   const sameSite = process.env.SESSION_COOKIE_SAMESITE ?? (isProduction ? 'None' : 'Lax')
   const secure = isProduction || process.env.SESSION_COOKIE_SECURE === 'true' ? '; Secure' : ''
+  const domain = sessionCookieDomain ? `; Domain=${sessionCookieDomain}` : ''
 
   return [
     `${sessionCookieName}=${session.token}`,
@@ -67,6 +68,7 @@ export function serializeSessionCookie(session: SessionToken) {
     `SameSite=${sameSite}`,
     `Max-Age=${maxAgeSeconds}`,
     `Expires=${session.expiresAt.toUTCString()}`,
+    domain,
     secure,
   ]
     .filter(Boolean)
@@ -74,10 +76,11 @@ export function serializeSessionCookie(session: SessionToken) {
 }
 
 export function serializeClearSessionCookie() {
-  const { sessionCookieName } = getAuthConfig()
+  const { sessionCookieName, sessionCookieDomain } = getAuthConfig()
   const isProduction = process.env.NODE_ENV === 'production'
   const sameSite = process.env.SESSION_COOKIE_SAMESITE ?? (isProduction ? 'None' : 'Lax')
   const secure = isProduction || process.env.SESSION_COOKIE_SECURE === 'true' ? '; Secure' : ''
+  const domain = sessionCookieDomain ? `; Domain=${sessionCookieDomain}` : ''
 
   return [
     `${sessionCookieName}=`,
@@ -86,6 +89,7 @@ export function serializeClearSessionCookie() {
     `SameSite=${sameSite}`,
     'Max-Age=0',
     'Expires=Thu, 01 Jan 1970 00:00:00 GMT',
+    domain,
     secure,
   ]
     .filter(Boolean)

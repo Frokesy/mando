@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply } from 'fastify'
-import { and, desc, eq, inArray } from 'drizzle-orm'
+import { and, desc, eq, inArray, lt } from 'drizzle-orm'
 import { z } from 'zod'
 
 import { getCurrentSessionContext } from '../auth/current-session.js'
@@ -115,10 +115,19 @@ export async function riderRoutes(app: FastifyInstance) {
 
       const session = createSessionToken()
 
-      await database.insert(authSessions).values({
-        userId: riderUser.userId,
-        tokenHash: session.tokenHash,
-        expiresAt: session.expiresAt,
+      await database.transaction(async (tx) => {
+        await tx.delete(authSessions).where(lt(authSessions.expiresAt, new Date()))
+
+        await tx
+          .update(authSessions)
+          .set({ revokedAt: new Date() })
+          .where(eq(authSessions.userId, riderUser.userId))
+
+        await tx.insert(authSessions).values({
+          userId: riderUser.userId,
+          tokenHash: session.tokenHash,
+          expiresAt: session.expiresAt,
+        })
       })
 
       const rider = await getRiderProfile(riderUser.userId)

@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply } from 'fastify'
-import { and, desc, eq, inArray, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm'
 import { z } from 'zod'
 
 import {
@@ -366,10 +366,19 @@ export async function adminRoutes(app: FastifyInstance) {
 
     const session = createSessionToken()
 
-    await database.insert(authSessions).values({
-      userId: adminUser.userId,
-      tokenHash: session.tokenHash,
-      expiresAt: session.expiresAt,
+    await database.transaction(async (tx) => {
+      await tx.delete(authSessions).where(lt(authSessions.expiresAt, new Date()))
+
+      await tx
+        .update(authSessions)
+        .set({ revokedAt: new Date() })
+        .where(eq(authSessions.userId, adminUser.userId))
+
+      await tx.insert(authSessions).values({
+        userId: adminUser.userId,
+        tokenHash: session.tokenHash,
+        expiresAt: session.expiresAt,
+      })
     })
 
     return reply

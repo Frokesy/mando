@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import { randomBytes } from 'node:crypto'
-import { and, desc, eq, inArray, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm'
 import { z } from 'zod'
 
 import { getCurrentSessionContext } from '../auth/current-session.js'
@@ -259,10 +259,19 @@ export async function salesAgentRoutes(app: FastifyInstance) {
 
       const session = createSessionToken()
 
-      await database.insert(authSessions).values({
-        userId: agentUser.userId,
-        tokenHash: session.tokenHash,
-        expiresAt: session.expiresAt,
+      await database.transaction(async (tx) => {
+        await tx.delete(authSessions).where(lt(authSessions.expiresAt, new Date()))
+
+        await tx
+          .update(authSessions)
+          .set({ revokedAt: new Date() })
+          .where(eq(authSessions.userId, agentUser.userId))
+
+        await tx.insert(authSessions).values({
+          userId: agentUser.userId,
+          tokenHash: session.tokenHash,
+          expiresAt: session.expiresAt,
+        })
       })
 
       const agent = await getSalesAgentProfile(agentUser.userId)

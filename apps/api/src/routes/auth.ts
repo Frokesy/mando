@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply } from 'fastify'
-import { eq, sql } from 'drizzle-orm'
+import { eq, lt, sql } from 'drizzle-orm'
 import { z } from 'zod'
 
 import {
@@ -32,6 +32,10 @@ const signupBodySchema = z.object({
     .regex(/\d/, 'Password must include at least one number.'),
   salesAgentId: z.uuid().optional(),
 })
+
+const loginAttemptWindowMs = 15 * 60 * 1000
+const loginAttemptsPerWindow = 5
+const loginAttempts = new Map<string, { count: number; windowStart: number }>()
 
 const loginBodySchema = z.object({
   email: z.email().trim().toLowerCase(),
@@ -198,6 +202,15 @@ export async function authRoutes(app: FastifyInstance) {
     }
 
     const { email, password } = parsedBody.data
+    const clientKey = request.ip ?? 'unknown'
+    const attemptState = getLoginAttemptState(clientKey)
+
+    if (attemptState.count >= loginAttemptsPerWindow) {
+      return reply.status(429).send({
+        error: 'rate_limited',
+        message: 'Too many login attempts. Please wait a few minutes and try again.',
+      })
+    }
 
     try {
       const [existingUser] = await database
@@ -213,6 +226,7 @@ export async function authRoutes(app: FastifyInstance) {
         .limit(1)
 
       if (!existingUser) {
+        recordLoginFailure(clientKey)
         return sendInvalidLogin(reply)
       }
 
@@ -222,6 +236,7 @@ export async function authRoutes(app: FastifyInstance) {
       )
 
       if (!passwordMatches) {
+        recordLoginFailure(clientKey)
         return sendInvalidLogin(reply)
       }
 
@@ -238,6 +253,13 @@ export async function authRoutes(app: FastifyInstance) {
       const session = createSessionToken()
 
       const loginResult = await database.transaction(async (tx) => {
+        await tx.delete(authSessions).where(lt(authSessions.expiresAt, new Date()))
+
+        await tx
+          .update(authSessions)
+          .set({ revokedAt: new Date() })
+          .where(eq(authSessions.userId, existingUser.id))
+
         await tx.insert(authSessions).values({
           userId: existingUser.id,
           tokenHash: session.tokenHash,
@@ -278,11 +300,14 @@ export async function authRoutes(app: FastifyInstance) {
         }
       })
 
+      resetLoginAttempts(clientKey)
+
       return reply
         .status(200)
         .header('Set-Cookie', serializeSessionCookie(session))
         .send(loginResult)
     } catch (error) {
+      recordLoginFailure(clientKey)
       request.log.error(error)
 
       return reply.status(500).send({
@@ -328,6 +353,24 @@ export async function authRoutes(app: FastifyInstance) {
       .header('Set-Cookie', serializeClearSessionCookie())
       .send()
   })
+
+  app.post('/logout-all', async (request, reply) => {
+    const sessionContext = await getCurrentSessionContext(request.headers.cookie)
+
+    if (!sessionContext) {
+      return sendUnauthenticated(reply)
+    }
+
+    await database
+      .update(authSessions)
+      .set({ revokedAt: new Date() })
+      .where(eq(authSessions.userId, sessionContext.userId))
+
+    return reply
+      .status(204)
+      .header('Set-Cookie', serializeClearSessionCookie())
+      .send()
+  })
 }
 
 function sendUnauthenticated(reply: FastifyReply) {
@@ -338,6 +381,36 @@ function sendUnauthenticated(reply: FastifyReply) {
       error: 'unauthenticated',
       message: 'Please log in to continue.',
     })
+}
+
+function getLoginAttemptState(clientKey: string) {
+  const now = Date.now()
+  const existing = loginAttempts.get(clientKey)
+
+  if (!existing || existing.windowStart + loginAttemptWindowMs <= now) {
+    return { count: 0 }
+  }
+
+  return existing
+}
+
+function recordLoginFailure(clientKey: string) {
+  const now = Date.now()
+  const existing = loginAttempts.get(clientKey)
+
+  if (!existing || existing.windowStart + loginAttemptWindowMs <= now) {
+    loginAttempts.set(clientKey, { count: 1, windowStart: now })
+    return
+  }
+
+  loginAttempts.set(clientKey, {
+    count: existing.count + 1,
+    windowStart: existing.windowStart,
+  })
+}
+
+function resetLoginAttempts(clientKey: string) {
+  loginAttempts.delete(clientKey)
 }
 
 function sendInvalidLogin(reply: FastifyReply) {

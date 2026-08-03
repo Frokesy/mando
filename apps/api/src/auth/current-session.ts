@@ -1,10 +1,11 @@
-import { eq } from 'drizzle-orm'
+import { eq, lt } from 'drizzle-orm'
 
 import {
   getSessionTokenFromCookie,
   hashSessionToken,
   isSessionExpired,
 } from './index.js'
+import { getAuthConfig } from '../config/auth.js'
 import { database } from '../db/client.js'
 import { authSessions, profiles, userRoles, users } from '../db/schema.js'
 
@@ -14,6 +15,8 @@ export async function getCurrentSessionContext(cookieHeader: string | undefined)
   if (!token) {
     return null
   }
+
+  await database.delete(authSessions).where(lt(authSessions.expiresAt, new Date()))
 
   const [sessionUser] = await database
     .select({
@@ -30,17 +33,28 @@ export async function getCurrentSessionContext(cookieHeader: string | undefined)
     .where(eq(authSessions.tokenHash, hashSessionToken(token)))
     .limit(1)
 
-  if (
-    !sessionUser ||
-    sessionUser.revokedAt ||
-    isSessionExpired(sessionUser.expiresAt)
-  ) {
+  if (!sessionUser) {
+    return null
+  }
+
+  if (sessionUser.revokedAt || isSessionExpired(sessionUser.expiresAt)) {
+    await database
+      .delete(authSessions)
+      .where(eq(authSessions.id, sessionUser.sessionId))
+
     return null
   }
 
   if (sessionUser.status === 'suspended' || sessionUser.status === 'disabled') {
     return null
   }
+
+  const { sessionTtlMs } = getAuthConfig()
+
+  await database
+    .update(authSessions)
+    .set({ expiresAt: new Date(Date.now() + sessionTtlMs) })
+    .where(eq(authSessions.id, sessionUser.sessionId))
 
   const [profile] = await database
     .select({
