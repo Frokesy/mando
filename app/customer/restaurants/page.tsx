@@ -53,8 +53,14 @@ const SuggestedRestaurant = () => {
     setRestaurantsLoading(true);
     const timeout = window.setTimeout(() => {
       const query = searchQuery.trim();
-      const nearbyUrl = new URL(`${API_BASE_URL}/customer/restaurants`);
-      const allUrl = new URL(`${API_BASE_URL}/customer/restaurants`);
+      const nearbyUrl = new URL(
+        `${API_BASE_URL}/customer/restaurants`,
+        window.location.origin,
+      );
+      const allUrl = new URL(
+        `${API_BASE_URL}/customer/restaurants`,
+        window.location.origin,
+      );
 
       nearbyUrl.searchParams.set("nearby", "true");
       if (query) {

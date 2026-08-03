@@ -40,7 +40,10 @@ const FeaturedMealCombos = () => {
     let mounted = true;
     const timeout = window.setTimeout(() => {
       const query = searchQuery.trim();
-      const url = new URL(`${API_BASE_URL}/customer/combos`);
+      const url = new URL(
+        `${API_BASE_URL}/customer/combos`,
+        window.location.origin,
+      );
 
       if (query) url.searchParams.set("q", query);
 
