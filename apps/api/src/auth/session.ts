@@ -81,6 +81,21 @@ export function serializeSessionCookie(session: SessionToken) {
     .join('; ')
 }
 
+export function serializeRefreshedSessionCookie(
+  cookieHeader: string | undefined,
+  now = new Date(),
+) {
+  const token = getSessionTokenFromCookie(cookieHeader)
+  if (!token) return null
+
+  const { sessionTtlMs } = getAuthConfig()
+  return serializeSessionCookie({
+    token,
+    tokenHash: hashSessionToken(token),
+    expiresAt: new Date(now.getTime() + sessionTtlMs),
+  })
+}
+
 export function serializeClearSessionCookie() {
   const { sessionCookieName, sessionCookieDomain } = getAuthConfig()
   const isProduction = process.env.NODE_ENV === 'production'

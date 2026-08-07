@@ -5,6 +5,7 @@ export {
   hashSessionToken,
   isSessionExpired,
   serializeClearSessionCookie,
+  serializeRefreshedSessionCookie,
   serializeSessionCookie,
   type SessionToken,
 } from './session.js'

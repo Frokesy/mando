@@ -13,6 +13,7 @@ import {
 } from '../auth/index.js'
 import { buildWebUrl } from '../config/web-url.js'
 import { database } from '../db/client.js'
+import { sendAgentCredentialsEmail } from '../email/agent-credentials.js'
 import {
   authSessions,
   comboCampaigns,
@@ -180,7 +181,31 @@ export async function salesAgentRoutes(app: FastifyInstance) {
         }
       })
 
-      return reply.status(201).send(result)
+      let credentialsEmailSent = true
+      let credentialsEmailId: string | null = null
+      let credentialsEmailError: string | null = null
+      try {
+        const delivery = await sendAgentCredentialsEmail({
+          email: result.user.email,
+          fullName: result.profile.fullName,
+          agentCode: result.salesAgent.agentCode,
+          password,
+        })
+        credentialsEmailId = delivery.messageId
+        request.log.info(
+          { userId: result.user.id, emailProvider: delivery.provider, emailMessageId: delivery.messageId },
+          'Sales agent credentials email accepted by provider',
+        )
+      } catch (error) {
+        credentialsEmailSent = false
+        credentialsEmailError = error instanceof Error ? error.message : String(error)
+        request.log.error(
+          { err: error, userId: result.user.id, credentialsEmailError },
+          'Unable to send sales agent credentials email',
+        )
+      }
+
+      return reply.status(201).send({ ...result, credentialsEmailSent, credentialsEmailId, credentialsEmailError })
     } catch (error) {
       if (error instanceof ExistingEmailPasswordMismatchError) {
         return reply.status(409).send({

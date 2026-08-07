@@ -63,7 +63,7 @@ export default function SalesAgentSignup() {
       });
 
       const result = (await response.json().catch(() => null)) as
-        | { message?: string }
+        | { message?: string; credentialsEmailSent?: boolean; credentialsEmailError?: string }
         | null;
 
       if (!response.ok) {
@@ -77,7 +77,12 @@ export default function SalesAgentSignup() {
         throw new Error(result?.message ?? "Unable to submit application");
       }
 
-      showToast("Application submitted. Admin approval is required.", "success");
+      showToast(
+        result?.credentialsEmailSent === false
+          ? `Application submitted, but we could not email your login details. ${result?.credentialsEmailError ?? 'Please contact support.'}`
+          : "Application submitted. Check your email for your login details; admin approval is required.",
+        result?.credentialsEmailSent === false ? "error" : "success",
+      );
       router.push("/sales-agent/login");
     } catch (error) {
       showToast(

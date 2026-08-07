@@ -8,6 +8,7 @@ import {
   hashPassword,
   hashSessionToken,
   serializeClearSessionCookie,
+  serializeRefreshedSessionCookie,
   serializeSessionCookie,
   verifyPassword,
 } from '../auth/index.js'
@@ -326,6 +327,11 @@ export async function authRoutes(app: FastifyInstance) {
       if (!sessionContext) {
         return sendUnauthenticated(reply)
       }
+
+      const refreshedCookie = serializeRefreshedSessionCookie(
+        request.headers.cookie,
+      )
+      if (refreshedCookie) reply.header('Set-Cookie', refreshedCookie)
 
       return reply.status(200).send(sessionContext.authPayload)
     } catch (error) {

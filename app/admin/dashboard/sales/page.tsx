@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   FaBan,
   FaChartLine,
@@ -332,13 +332,15 @@ function AgentReferrals({ agent }: { agent: Agent }) {
 
 function AddAgentModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const showToast = useToastStore((s) => s.showToast);
+  const submittingRef = useRef(false);
   const [step, setStep] = useState(1);
   const [agentType, setAgentType] = useState("Sales agent");
   const [level, setLevel] = useState("Starter");
   const [saving, setSaving] = useState(false);
   const steps = ["Personal info", "Agent setup", "Bank details", "Review"];
   async function submit(formData: FormData) {
-    if (saving) return;
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setSaving(true);
     try {
       const response = await fetch(`${API_BASE_URL}/admin/sales/agents`, {
@@ -359,13 +361,19 @@ function AddAgentModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
           accountName: formData.get("accountName"),
         }),
       });
-      const payload = await response.json().catch(() => null) as { message?: string } | null;
+      const payload = await response.json().catch(() => null) as { message?: string; credentialsEmailSent?: boolean; credentialsEmailId?: string | null; credentialsEmailError?: string } | null;
       if (!response.ok) throw new Error(payload?.message ?? "Unable to add agent");
-      showToast("Agent added successfully", "success");
+      showToast(
+        payload?.credentialsEmailSent === false
+          ? `Agent added, but the login details email could not be sent. ${payload?.credentialsEmailError ?? ''}`.trim()
+          : `Agent added and email accepted by Resend${payload?.credentialsEmailId ? ` (${payload.credentialsEmailId})` : ""}`,
+        payload?.credentialsEmailSent === false ? "error" : "success",
+      );
       onSaved();
     } catch (error) {
       showToast(error instanceof Error ? error.message : "Unable to add agent", "error");
     } finally {
+      submittingRef.current = false;
       setSaving(false);
     }
   }
@@ -426,7 +434,7 @@ function ModalActions({ step, setStep, onClose, finalLabel, disabled }: { step: 
   return <div className="mt-6 flex items-center justify-between border-t border-gray-100 pt-4"><button type="button" disabled={disabled} onClick={step === 1 ? onClose : () => setStep(step - 1)} className="rounded-lg border border-gray-200 px-4 py-2 text-[11px] font-semibold text-[#6A7282] disabled:cursor-not-allowed disabled:opacity-60">{step === 1 ? "Cancel" : "Back"}</button>{step === 4 ? <Button type="submit" disabled={disabled}>{finalLabel}</Button> : <Button type="button" onClick={() => setStep(step + 1)} disabled={disabled}>Continue</Button>}</div>;
 }
 function ModalShell({ title, subtitle, children, onClose }: { title: string; subtitle: string; children: React.ReactNode; onClose: () => void }) {
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4 backdrop-blur-sm"><div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl"><div className="flex items-start justify-between gap-4"><div><h2 className="text-sm font-semibold text-[#101828]">{title}</h2><p className="mt-1 text-[11px] text-[#6A7282]">{subtitle}</p></div><button onClick={onClose} className="rounded-lg border border-gray-200 px-3 py-2 text-[10px] font-semibold text-[#6A7282]">Close</button></div><div className="mt-5">{children}</div></div></div>;
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4 backdrop-blur-sm"><div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl"><div className="flex items-start justify-between gap-4"><div><h2 className="text-sm font-semibold text-[#101828]">{title}</h2><p className="mt-1 text-[11px] text-[#6A7282]">{subtitle}</p></div><button type="button" onClick={onClose} className="rounded-lg border border-gray-200 px-3 py-2 text-[10px] font-semibold text-[#6A7282]">Close</button></div><div className="mt-5">{children}</div></div></div>;
 }
 function MenuButton({ icon, label, danger, disabled, onClick }: { icon: React.ReactNode; label: string; danger?: boolean; disabled?: boolean; onClick?: () => void }) {
   return <button disabled={disabled} onClick={onClick} className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 ${danger ? "text-red-600" : ""}`}>{icon}{label}</button>;

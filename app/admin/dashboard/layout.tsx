@@ -24,6 +24,7 @@ import Link from "next/link";
 
 const API_BASE_URL =
   (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000").replace(/\/+$/, "");
+const SESSION_CHECK_INTERVAL_MS = 4 * 60 * 1000;
 
 const AdminDashboardLayout = ({ children }: { children: React.ReactNode }) => {
   const pathname = usePathname() ?? "";
@@ -33,26 +34,54 @@ const AdminDashboardLayout = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     let mounted = true;
 
-    fetch(`${API_BASE_URL}/auth/me`, { credentials: "include" })
-      .then(async (response) => {
-        if (!response.ok) throw new Error("Unauthenticated");
-        return response.json() as Promise<{ roles?: string[] }>;
-      })
-      .then((auth) => {
+    async function checkSession(initialCheck = false) {
+      try {
+        const response = await fetch(`${API_BASE_URL}/auth/me`, {
+          credentials: "include",
+          cache: "no-store",
+        });
+
         if (!mounted) return;
+
+        if (response.status === 401 || response.status === 403) {
+          router.replace("/admin/login");
+          return;
+        }
+
+        if (!response.ok) {
+          // A sleeping API or temporary database/network error is not a logout.
+          if (initialCheck) setCheckingSession(false);
+          return;
+        }
+
+        const auth = (await response.json()) as { roles?: string[] };
         if (!auth.roles?.includes("admin")) {
           router.replace("/admin/login");
           return;
         }
+
         setCheckingSession(false);
-      })
-      .catch(() => {
-        if (!mounted) return;
-        router.replace("/admin/login");
-      });
+      } catch {
+        // Keep the current session during transient connectivity failures.
+        if (mounted && initialCheck) setCheckingSession(false);
+      }
+    }
+
+    void checkSession(true);
+    const sessionCheckInterval = window.setInterval(
+      () => void checkSession(),
+      SESSION_CHECK_INTERVAL_MS,
+    );
+
+    const checkVisibleSession = () => {
+      if (document.visibilityState === "visible") void checkSession();
+    };
+    document.addEventListener("visibilitychange", checkVisibleSession);
 
     return () => {
       mounted = false;
+      window.clearInterval(sessionCheckInterval);
+      document.removeEventListener("visibilitychange", checkVisibleSession);
     };
   }, [router]);
 

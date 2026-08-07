@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply } from 'fastify'
+import { randomBytes } from 'node:crypto'
 import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm'
 import { z } from 'zod'
 
@@ -11,6 +12,7 @@ import {
 } from '../auth/index.js'
 import { getCurrentSessionContext } from '../auth/current-session.js'
 import { database } from '../db/client.js'
+import { sendAgentCredentialsEmail } from '../email/agent-credentials.js'
 import {
   adminPayoutSettings,
   adminSettings,
@@ -1504,10 +1506,37 @@ export async function adminRoutes(app: FastifyInstance) {
     }
 
     try {
-      const agent = await createAdminSalesAgent(parsedBody.data)
-      return reply.status(201).send({ agent, temporaryPassword: createTemporaryPassword() })
+      const temporaryPassword = createTemporaryPassword()
+      const agent = await createAdminSalesAgent(parsedBody.data, temporaryPassword)
+      if (!agent) throw new Error('Sales agent creation could not be confirmed.')
+      let credentialsEmailSent = true
+      let credentialsEmailId: string | null = null
+      let credentialsEmailError: string | null = null
+
+      try {
+        const delivery = await sendAgentCredentialsEmail({
+          email: parsedBody.data.email,
+          fullName: agent.name,
+          agentCode: agent.agentCode,
+          password: temporaryPassword,
+        })
+        credentialsEmailId = delivery.messageId
+        request.log.info(
+          { agentId: agent.id, emailProvider: delivery.provider, emailMessageId: delivery.messageId },
+          'Sales agent credentials email accepted by provider',
+        )
+      } catch (error) {
+        credentialsEmailSent = false
+        credentialsEmailError = error instanceof Error ? error.message : String(error)
+        request.log.error(
+          { err: error, agentId: agent.id, credentialsEmailError },
+          'Unable to send sales agent credentials email',
+        )
+      }
+
+      return reply.status(201).send({ agent, credentialsEmailSent, credentialsEmailId, credentialsEmailError })
     } catch (error) {
-      if (isUniqueViolation(error)) {
+      if (error instanceof ExistingAdminCreatedUserError || isUniqueViolation(error)) {
         return reply.status(409).send({
           error: 'agent_email_exists',
           message: 'A user with this email already exists. Use a different email or edit the existing account.',
@@ -2869,7 +2898,7 @@ async function selectAdminSalesAgentDetail(agentId: string) {
   return data.agents.find((agent) => agent.id === agentId) ?? null
 }
 
-async function createAdminSalesAgent(input: z.infer<typeof salesAgentBodySchema>) {
+async function createAdminSalesAgent(input: z.infer<typeof salesAgentBodySchema>, temporaryPassword: string) {
   const fullName = `${input.firstName} ${input.lastName}`.trim()
   const agentCode = await createUniqueAgentCode(fullName)
   const referralCode = input.referralCode || await createUniqueReferralCode(fullName)
@@ -2878,6 +2907,8 @@ async function createAdminSalesAgent(input: z.infer<typeof salesAgentBodySchema>
     fullName,
     phone: input.phone,
     role: 'sales_agent',
+    password: temporaryPassword,
+    requireNewUser: true,
   })
 
   await database.insert(salesAgentProfiles).values({
@@ -3487,14 +3518,18 @@ function slugify(value: string) {
 }
 
 function createTemporaryPassword() {
-  return 'Password123!'
+  return `M${randomBytes(9).toString('base64url')}7!`
 }
+
+class ExistingAdminCreatedUserError extends Error {}
 
 async function getOrCreateUserForRole(input: {
   email: string
   fullName: string
   phone?: string | null
   role: 'customer' | 'restaurant' | 'rider' | 'sales_agent' | 'admin'
+  password?: string
+  requireNewUser?: boolean
 }) {
   const normalizedEmail = input.email.trim().toLowerCase()
   const [existingUser] = await database
@@ -3503,12 +3538,14 @@ async function getOrCreateUserForRole(input: {
     .where(sql`lower(${users.email}) = ${normalizedEmail}`)
     .limit(1)
 
+  if (existingUser && input.requireNewUser) throw new ExistingAdminCreatedUserError()
+
   const user = existingUser ?? (
     await database
       .insert(users)
       .values({
         email: normalizedEmail,
-        passwordHash: await hashPassword(createTemporaryPassword()),
+        passwordHash: await hashPassword(input.password ?? createTemporaryPassword()),
         status: 'active',
         emailVerifiedAt: new Date(),
       })
@@ -3990,12 +4027,23 @@ function sendInvalidAdminLogin(reply: FastifyReply) {
 }
 
 function isUniqueViolation(error: unknown) {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    (error as { code?: string }).code === '23505'
-  )
+  return getDatabaseErrorCode(error) === '23505'
+}
+
+function getDatabaseErrorCode(error: unknown): string | undefined {
+  let current = error
+
+  for (let depth = 0; depth < 5; depth += 1) {
+    if (typeof current !== 'object' || current === null) return undefined
+
+    if ('code' in current && typeof (current as { code?: unknown }).code === 'string') {
+      return (current as { code: string }).code
+    }
+
+    current = 'cause' in current ? (current as { cause?: unknown }).cause : undefined
+  }
+
+  return undefined
 }
 
 function isForeignKeyViolation(error: unknown) {
