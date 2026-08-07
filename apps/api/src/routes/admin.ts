@@ -1496,6 +1496,97 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.status(200).send(await selectAdminSalesAgents())
   })
 
+  app.patch('/sales/agents/pending/approve', async (request, reply) => {
+    const pendingAgents = await database
+      .select({
+        userId: users.id,
+        email: users.email,
+        fullName: profiles.fullName,
+        agentCode: salesAgentProfiles.agentCode,
+      })
+      .from(salesAgentProfiles)
+      .innerJoin(users, eq(salesAgentProfiles.userId, users.id))
+      .innerJoin(profiles, eq(salesAgentProfiles.userId, profiles.userId))
+      .where(eq(salesAgentProfiles.status, 'pending'))
+
+    if (pendingAgents.length === 0) {
+      return reply.status(200).send({ approvedCount: 0, deliveryResults: [] })
+    }
+
+    const approvedAgents = await database.transaction(async (tx) => {
+      return Promise.all(
+        pendingAgents.map(async (agent) => {
+          const temporaryPassword = createTemporaryPassword()
+          const passwordHash = await hashPassword(temporaryPassword)
+
+          await tx
+            .update(users)
+            .set({
+              passwordHash,
+              status: 'active',
+              updatedAt: new Date(),
+            })
+            .where(eq(users.id, agent.userId))
+
+          await tx
+            .update(salesAgentProfiles)
+            .set({
+              status: 'active',
+              updatedAt: new Date(),
+            })
+            .where(eq(salesAgentProfiles.userId, agent.userId))
+
+          return {
+            ...agent,
+            temporaryPassword,
+            fullName: agent.fullName ?? agent.email,
+            agentCode: agent.agentCode ?? '',
+          }
+        }),
+      )
+    })
+
+    const deliveryResults = await Promise.all(
+      approvedAgents.map(async (agent) => {
+        try {
+          const delivery = await sendAgentCredentialsEmail({
+            email: agent.email,
+            fullName: agent.fullName,
+            agentCode: agent.agentCode,
+            password: agent.temporaryPassword,
+          })
+
+          request.log.info(
+            { agentId: agent.userId, emailProvider: delivery.provider, emailMessageId: delivery.messageId },
+            'Sales agent credentials email accepted by provider',
+          )
+
+          return {
+            agentId: agent.userId,
+            emailSent: true,
+            messageId: delivery.messageId,
+          }
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error)
+          request.log.error(
+            { err: error, agentId: agent.userId, credentialsEmailError: errorMessage },
+            'Unable to send sales agent credentials email for approved agent',
+          )
+          return {
+            agentId: agent.userId,
+            emailSent: false,
+            error: errorMessage,
+          }
+        }
+      }),
+    )
+
+    return reply.status(200).send({
+      approvedCount: approvedAgents.length,
+      deliveryResults,
+    })
+  })
+
   app.post('/sales/agents', async (request, reply) => {
     const parsedBody = salesAgentBodySchema.safeParse(request.body)
     if (!parsedBody.success) {

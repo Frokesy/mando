@@ -19,6 +19,7 @@ import {
   FaUserFriends,
   FaWallet,
 } from "react-icons/fa";
+import ConfirmationModal from "@/components/ConfirmationModal";
 import StatsCard from "@/components/cards/StatsCard";
 import { useToastStore } from "@/store/toastStore";
 
@@ -90,6 +91,8 @@ export default function AdminSalesPage() {
   const [highestPeriod, setHighestPeriod] = useState("This week");
   const [agentModal, setAgentModal] = useState<"add" | "edit" | null>(null);
   const [actionAgentId, setActionAgentId] = useState<string | null>(null);
+  const [approvingPending, setApprovingPending] = useState(false);
+  const [confirmPendingApproval, setConfirmPendingApproval] = useState(false);
   const showToast = useToastStore((s) => s.showToast);
 
   async function loadSales() {
@@ -202,6 +205,47 @@ export default function AdminSalesPage() {
     }
   }
 
+  async function approvePendingAgents() {
+    if (data.stats.pendingApprovals === 0) return;
+    setApprovingPending(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/sales/agents/pending/approve`, {
+        method: "PATCH",
+        credentials: "include",
+      });
+      const payload = await response.json().catch(() => null) as {
+        approvedCount?: number
+        deliveryResults?: { emailSent: boolean; error?: string }[]
+        message?: string
+      } | null;
+
+      if (!response.ok) {
+        throw new Error(payload?.message ?? "Unable to approve pending agents");
+      }
+
+      await loadSales();
+
+      if (!payload?.approvedCount || payload.approvedCount === 0) {
+        showToast("No pending agents were approved.", "info");
+        return;
+      }
+
+      const failedEmails = payload.deliveryResults?.filter((result) => !result.emailSent) ?? [];
+      if (failedEmails.length > 0) {
+        showToast(
+          `${payload.approvedCount} pending agents approved, but ${failedEmails.length} credential email(s) failed to send.`,
+          "info",
+        );
+      } else {
+        showToast(`Approved ${payload.approvedCount} pending agents and sent login credentials.`, "success");
+      }
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Unable to approve pending agents", "error");
+    } finally {
+      setApprovingPending(false);
+    }
+  }
+
   async function copyToClipboard(value: string, message = "Copied") {
     try {
       await navigator.clipboard.writeText(value);
@@ -219,8 +263,16 @@ export default function AdminSalesPage() {
           <h2 className="text-[18px] font-semibold text-[#101828]">Sales Agents & Influencers</h2>
           <p className="text-[11px] text-[#99A1AF]">Manage agent performance, referrals, influencer status and commissions.</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button variant="secondary" icon={<FaFire />} onClick={() => setShowHighestPanel(true)}>Highest Posting</Button>
+          <Button
+            variant="secondary"
+            icon={<FaCheck />}
+            disabled={approvingPending || data.stats.pendingApprovals === 0}
+            onClick={() => setConfirmPendingApproval(true)}
+          >
+            {approvingPending ? 'Approving...' : `Approve ${data.stats.pendingApprovals} Pending`}
+          </Button>
           <Link href="/admin/dashboard/sales/settings" className="flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-[11px] font-semibold text-[#6A7282] shadow-sm">
             <FaSlidersH /> Settings
           </Link>
@@ -304,6 +356,20 @@ export default function AdminSalesPage() {
       {showHighestPanel ? <HighestPostingPanel agent={highestAgent} period={highestPeriod} onPeriodChange={setHighestPeriod} onClose={() => setShowHighestPanel(false)} /> : null}
       {agentModal === "add" ? <AddAgentModal onClose={() => setAgentModal(null)} onSaved={() => { setAgentModal(null); void loadSales(); }} /> : null}
       {agentModal === "edit" ? <EditAgentModal agent={selectedAgent} onClose={() => setAgentModal(null)} onSaved={() => { setAgentModal(null); void loadSales(); }} /> : null}
+      <ConfirmationModal
+        open={confirmPendingApproval}
+        title="Approve pending agents"
+        description={`This will approve ${data.stats.pendingApprovals} pending sales agent(s) and send them their login credentials. Do you want to continue?`}
+        confirmLabel="Approve agents"
+        cancelLabel="Cancel"
+        confirming={approvingPending}
+        danger={false}
+        onConfirm={() => {
+          setConfirmPendingApproval(false);
+          void approvePendingAgents();
+        }}
+        onClose={() => setConfirmPendingApproval(false)}
+      />
     </div>
   );
 }
