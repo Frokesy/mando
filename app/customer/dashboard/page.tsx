@@ -422,6 +422,14 @@ const Dashboard = () => {
             </p>
           )}
         </div>
+        <div className="mt-8 flex justify-center">
+          <Link
+            href="/customer/featured-combos"
+            className="rounded-full bg-[#DFB400] px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-[#DFB400]/25 transition hover:bg-[#c7a500]"
+          >
+            See more combos
+          </Link>
+        </div>
       </div>
 
       <a

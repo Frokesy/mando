@@ -429,28 +429,29 @@ const CartPage = () => {
                     ))}
                   </div>
                 )}
-                {!item.isPromoCombo ? (
-                  <Link href={`/customer/featured-combos/${item.id}`} className="underline text-[13px] text-[#DFB400]">
+                <div className="mt-2 inline-flex items-center gap-3 rounded-full bg-[#FFF7E0] px-3 py-2">
+                  <button
+                    type="button"
+                    onClick={() => updateQuantity(item.id, Math.max(1, item.quantity - 1))}
+                    className="flex h-7 w-7 items-center justify-center rounded-full bg-white text-sm font-semibold text-[#141B34]"
+                    aria-label={`Reduce quantity for ${item.comboName}`}
+                  >
+                    -
+                  </button>
+                  <span className="text-[13px] font-semibold text-[#141B34]">{item.quantity} plate{item.quantity === 1 ? "" : "s"}</span>
+                  <button
+                    type="button"
+                    onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                    className="flex h-7 w-7 items-center justify-center rounded-full bg-[#DFB400] text-sm font-semibold text-white"
+                    aria-label={`Increase quantity for ${item.comboName}`}
+                  >
+                    +
+                  </button>
+                </div>
+                {!item.isPromoCombo && (
+                  <Link href={`/customer/featured-combos/${item.id}`} className="mt-2 inline-block underline text-[13px] text-[#DFB400]">
                     edit combo portions
                   </Link>
-                ) : (
-                  <div className="mt-2 inline-flex items-center gap-3 rounded-full bg-[#FFF7E0] px-3 py-2">
-                    <button
-                      type="button"
-                      onClick={() => updateQuantity(item.id, Math.max(1, item.quantity - 1))}
-                      className="flex h-7 w-7 items-center justify-center rounded-full bg-white text-sm font-semibold text-[#141B34]"
-                    >
-                      -
-                    </button>
-                    <span className="text-[13px] font-semibold text-[#141B34]">{item.quantity} plate{item.quantity === 1 ? "" : "s"}</span>
-                    <button
-                      type="button"
-                      onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                      className="flex h-7 w-7 items-center justify-center rounded-full bg-[#DFB400] text-sm font-semibold text-white"
-                    >
-                      +
-                    </button>
-                  </div>
                 )}
                 <button
                   type="button"
