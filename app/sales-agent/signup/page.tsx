@@ -80,7 +80,7 @@ export default function SalesAgentSignup() {
       showToast(
         result?.credentialsEmailSent === false
           ? `Application submitted, but we could not email your login details. ${result?.credentialsEmailError ?? 'Please contact support.'}`
-          : "Application submitted. Check your email for your login details; admin approval is required.",
+          : "Application submitted. Check your email for your login details",
         result?.credentialsEmailSent === false ? "error" : "success",
       );
       router.push("/sales-agent/login");

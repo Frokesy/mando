@@ -366,7 +366,7 @@ function AddAgentModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
       showToast(
         payload?.credentialsEmailSent === false
           ? `Agent added, but the login details email could not be sent. ${payload?.credentialsEmailError ?? ''}`.trim()
-          : `Agent added and email accepted by Resend${payload?.credentialsEmailId ? ` (${payload.credentialsEmailId})` : ""}`,
+          : `Agent added and login credentials sent to agent's email successfully`,
         payload?.credentialsEmailSent === false ? "error" : "success",
       );
       onSaved();

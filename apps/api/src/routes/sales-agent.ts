@@ -154,15 +154,15 @@ export async function salesAgentRoutes(app: FastifyInstance) {
           agentCode,
           referralCode: newReferralCode,
           uplineSalesAgentId: upline.userId,
-          status: 'pending',
+          status: 'active',
           tier: 'standard',
         })
 
         await tx.insert(notifications).values({
           userId: upline.userId,
           type: 'sales_agent_downline_application',
-          title: 'New sales agent application',
-          body: `${fullName} applied through your influencer referral link. Admin approval is required.`,
+          title: 'New sales agent joined',
+          body: `${fullName} joined as a sales agent through your influencer referral link.`,
           data: {
             applicantUserId: createdUser.id,
             applicantEmail: createdUser.email,
