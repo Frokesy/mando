@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
-import { and, eq, or } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { z } from 'zod'
 
 import { getCurrentSessionContext } from '../auth/current-session.js'
@@ -9,6 +9,7 @@ import {
   notifications,
   orderStatusEvents,
   orders,
+  paymentProviderEvents,
   payments,
   profiles,
   restaurantMembers,
@@ -16,7 +17,11 @@ import {
 } from '../db/schema.js'
 import { getRoutePayConfig } from '../config/routepay.js'
 import { buildWebUrl } from '../config/web-url.js'
-import { createRoutePayHostedPayment } from '../payments/routepay.js'
+import {
+  createRoutePayHostedPayment,
+  getRoutePayTransaction,
+  RoutePayVerificationError,
+} from '../payments/routepay.js'
 
 const initiateBodySchema = z.object({
   orderId: z.uuid(),
@@ -160,8 +165,15 @@ async function verifyCheckoutManually(
       customerId: orders.customerId,
       restaurantId: orders.restaurantId,
       status: orders.status,
+      paymentId: payments.id,
+      paymentStatus: payments.status,
+      transactionReference: payments.providerReference,
+      merchantReference: payments.customerReference,
+      paymentAmount: payments.amount,
+      currency: payments.currency,
     })
     .from(orders)
+    .innerJoin(payments, eq(payments.orderId, orders.id))
     .where(
       and(
         eq(orders.id, parsedParams.data.orderId),
@@ -184,10 +196,36 @@ async function verifyCheckoutManually(
     })
   }
 
-  await finalizePaidOrder(order, {
-    actorUserId: sessionContext.userId,
-    note: 'Payment confirmed.',
-  })
+  if (!order.transactionReference) {
+    await recordPaymentProviderEvent({
+      source: 'manual_verification', payment: order, outcome: 'missing_transaction_reference',
+      requestId: request.id,
+    })
+    return reply.status(409).send({
+      error: 'payment_not_verifiable',
+      message: 'This payment has no provider transaction reference and cannot be confirmed.',
+    })
+  }
+
+  const verification = await verifyPaymentWithRoutePay(order, request.id, 'manual_verification')
+  if (verification === 'successful') {
+    await finalizePaidOrder(order, {
+      actorUserId: sessionContext.userId,
+      note: 'Payment independently verified with RoutePay.',
+    })
+  } else if (verification === 'failed' && order.paymentStatus !== 'verified') {
+    await database.update(payments).set({ status: 'failed', updatedAt: new Date() })
+      .where(eq(payments.id, order.paymentId))
+    return reply.status(402).send({
+      error: 'payment_failed',
+      message: 'RoutePay reports that this payment failed.',
+    })
+  } else {
+    return reply.status(202).send({
+      order: { id: order.id, orderNumber: order.orderNumber, status: 'pending_payment' },
+      payment: { status: verification },
+    })
+  }
 
   return reply.status(200).send({
     order: {
@@ -203,6 +241,11 @@ async function handleRoutePayWebhook(
   reply: FastifyReply,
 ) {
   if (!isAuthorizedRoutePayWebhook(request)) {
+    request.log.warn({ requestId: request.id }, 'Rejected unauthorized RoutePay webhook')
+    await recordPaymentProviderEvent({
+      source: 'webhook', outcome: 'unauthorized', requestId: request.id,
+      payload: sanitizePaymentPayload(request.body),
+    })
     return reply.status(401).send({
       error: 'unauthorized_webhook',
       message: 'Webhook authentication failed.',
@@ -212,6 +255,10 @@ async function handleRoutePayWebhook(
   const parsedBody = routePayWebhookBodySchema.safeParse(request.body)
 
   if (!parsedBody.success) {
+    await recordPaymentProviderEvent({
+      source: 'webhook', outcome: 'invalid_payload', requestId: request.id,
+      payload: sanitizePaymentPayload(request.body),
+    })
     return reply.status(400).send({
       error: 'validation_error',
       message: 'Invalid webhook payload.',
@@ -253,6 +300,10 @@ async function handleRoutePayWebhook(
 
   if (!merchantReference && !transactionReference) {
     request.log.warn({ payload }, 'RoutePay webhook missing payment reference')
+    await recordPaymentProviderEvent({
+      source: 'webhook', outcome: 'unmatched_missing_reference', requestId: request.id,
+      reportedStatus: status, payload: sanitizePaymentPayload(payload),
+    })
     return reply.status(202).send({ received: true, matched: false })
   }
 
@@ -266,17 +317,27 @@ async function handleRoutePayWebhook(
       { merchantReference, transactionReference, payload },
       'RoutePay webhook payment not found',
     )
+    await recordPaymentProviderEvent({
+      source: 'webhook', outcome: 'unmatched_payment', requestId: request.id,
+      merchantReference, transactionReference, reportedStatus: status,
+      payload: sanitizePaymentPayload(payload),
+    })
     return reply.status(202).send({ received: true, matched: false })
   }
 
-  const success = isSuccessfulRoutePayStatus(status)
-  const failed = isFailedRoutePayStatus(status)
+  const verification = await verifyPaymentWithRoutePay(
+    payment,
+    request.id,
+    'webhook',
+    sanitizePaymentPayload(payload),
+    status,
+  )
 
-  if (success) {
+  if (verification === 'successful') {
     await finalizePaidOrder(payment, {
-      note: 'Payment confirmed.',
+      note: 'Payment independently verified with RoutePay after webhook.',
     })
-  } else if (failed && payment.paymentStatus !== 'verified') {
+  } else if (verification === 'failed' && payment.paymentStatus !== 'verified') {
     const now = new Date()
     await database
       .update(payments)
@@ -290,7 +351,7 @@ async function handleRoutePayWebhook(
   return reply.status(200).send({
     received: true,
     matched: true,
-    status: success ? 'verified' : failed ? 'failed' : 'ignored',
+    status: verification === 'successful' ? 'verified' : verification,
   })
 }
 
@@ -351,6 +412,10 @@ async function findRoutePayPayment(input: {
     .select({
       paymentId: payments.id,
       paymentStatus: payments.status,
+      transactionReference: payments.providerReference,
+      merchantReference: payments.customerReference,
+      paymentAmount: payments.amount,
+      currency: payments.currency,
       id: orders.id,
       orderNumber: orders.orderNumber,
       customerId: orders.customerId,
@@ -359,10 +424,120 @@ async function findRoutePayPayment(input: {
     })
     .from(payments)
     .innerJoin(orders, eq(payments.orderId, orders.id))
-    .where(clauses.length === 1 ? clauses[0] : or(...clauses))
+    .where(clauses.length === 1 ? clauses[0] : and(...clauses))
     .limit(1)
 
   return payment ?? null
+}
+
+type AuditablePayment = PayableOrder & {
+  paymentId: string
+  paymentStatus: (typeof payments.$inferSelect)['status']
+  transactionReference: string | null
+  merchantReference: string | null
+  paymentAmount: number
+  currency: string
+}
+
+async function verifyPaymentWithRoutePay(
+  payment: AuditablePayment,
+  requestId: string,
+  source: 'webhook' | 'manual_verification',
+  payload?: unknown,
+  reportedStatus?: string | null,
+) {
+  try {
+    const verification = await getRoutePayTransaction(payment.transactionReference!)
+    const amountMatches = verification.amount !== null && verification.amount === payment.paymentAmount
+    const currencyMatches = verification.currency !== null && verification.currency.toUpperCase() === payment.currency.toUpperCase()
+    const verifiedStatus = amountMatches && currencyMatches ? verification.status : 'unknown'
+    const outcome = verification.amount === null
+      ? 'provider_amount_missing'
+      : !amountMatches
+        ? 'amount_mismatch'
+        : verification.currency === null
+          ? 'provider_currency_missing'
+          : !currencyMatches
+            ? 'currency_mismatch'
+        : `provider_${verification.status}`
+
+    await recordPaymentProviderEvent({
+      source, payment, outcome, requestId, payload, reportedStatus,
+      verifiedStatus: verification.rawStatus,
+      providerCorrelationId: verification.correlationId,
+      httpStatus: verification.httpStatus,
+      verificationResponse: sanitizePaymentPayload(verification.raw),
+      processedAt: new Date(),
+    })
+    return verifiedStatus
+  } catch (error) {
+    const verificationError = error instanceof RoutePayVerificationError ? error : null
+    await recordPaymentProviderEvent({
+      source, payment, outcome: 'provider_verification_error', requestId, payload,
+      reportedStatus, httpStatus: verificationError?.httpStatus,
+      providerCorrelationId: verificationError?.correlationId,
+      verificationResponse: sanitizePaymentPayload(verificationError?.responseBody),
+      errorMessage: error instanceof Error ? error.message : 'Unknown verification error',
+      processedAt: new Date(),
+    })
+    requestLogSafeError(error)
+    return 'unknown' as const
+  }
+}
+
+type PaymentEventInput = {
+  source: string
+  outcome: string
+  requestId?: string
+  payment?: Partial<AuditablePayment>
+  merchantReference?: string | null
+  transactionReference?: string | null
+  reportedStatus?: string | null
+  verifiedStatus?: string | null
+  providerCorrelationId?: string | null
+  httpStatus?: number
+  payload?: unknown
+  verificationResponse?: unknown
+  errorMessage?: string
+  processedAt?: Date
+}
+
+async function recordPaymentProviderEvent(input: PaymentEventInput) {
+  const event = {
+    provider: 'routepay', source: input.source,
+    paymentId: input.payment?.paymentId,
+    orderId: input.payment?.id,
+    merchantReference: input.merchantReference ?? input.payment?.merchantReference,
+    transactionReference: input.transactionReference ?? input.payment?.transactionReference,
+    reportedStatus: input.reportedStatus,
+    verifiedStatus: input.verifiedStatus,
+    outcome: input.outcome,
+    requestId: input.requestId,
+    providerCorrelationId: input.providerCorrelationId,
+    httpStatus: input.httpStatus,
+    payload: input.payload,
+    verificationResponse: input.verificationResponse,
+    errorMessage: input.errorMessage,
+    processedAt: input.processedAt,
+  }
+  console.info(JSON.stringify({ type: 'payment_provider_event', ...event }))
+  await database.insert(paymentProviderEvents).values(event)
+}
+
+function sanitizePaymentPayload(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sanitizePaymentPayload)
+  if (!value || typeof value !== 'object') return value
+  const sensitive = /card|pan|cvv|authorization|password|secret|token|accountnumber/i
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, item]) => [
+    key, sensitive.test(key) ? '[redacted]' : sanitizePaymentPayload(item),
+  ]))
+}
+
+function requestLogSafeError(error: unknown) {
+  console.error(JSON.stringify({
+    type: 'routepay_verification_error',
+    message: error instanceof Error ? error.message : 'Unknown verification error',
+  }))
 }
 async function finalizePaidOrder(
   order: PayableOrder,
@@ -373,6 +548,17 @@ async function finalizePaidOrder(
   const now = new Date()
 
   await database.transaction(async (tx) => {
+    const [updatedOrder] = await tx
+      .update(orders)
+      .set({
+        status: 'awaiting_restaurant',
+        updatedAt: now,
+      })
+      .where(and(eq(orders.id, order.id), eq(orders.status, 'pending_payment')))
+      .returning({ id: orders.id })
+
+    if (!updatedOrder) return
+
     await tx
       .update(payments)
       .set({
@@ -382,14 +568,6 @@ async function finalizePaidOrder(
         updatedAt: now,
       })
       .where(eq(payments.orderId, order.id))
-
-    await tx
-      .update(orders)
-      .set({
-        status: 'awaiting_restaurant',
-        updatedAt: now,
-      })
-      .where(eq(orders.id, order.id))
 
     await tx.insert(orderStatusEvents).values({
       orderId: order.id,
@@ -433,7 +611,9 @@ async function finalizePaidOrder(
 function isAuthorizedRoutePayWebhook(request: FastifyRequest) {
   const config = getRoutePayConfig()
 
-  if (!config.webhookUsername && !config.webhookPassword) return true
+  if (!config.webhookUsername || !config.webhookPassword) {
+    return process.env.NODE_ENV !== 'production'
+  }
 
   const authorization = request.headers.authorization
   if (!authorization?.startsWith('Basic ')) return false
@@ -471,32 +651,6 @@ function getPayloadString(
   return null
 }
 
-function isSuccessfulRoutePayStatus(status: string | null) {
-  if (!status) return false
-  const normalized = status.toLowerCase()
-
-  return [
-    '00',
-    'success',
-    'successful',
-    'paid',
-    'completed',
-    'verified',
-    'payment successful',
-    'transaction successful',
-  ].includes(normalized)
-}
-
-function isFailedRoutePayStatus(status: string | null) {
-  if (!status) return false
-  const normalized = status.toLowerCase()
-
-  return ['failed', 'failure', 'cancelled', 'canceled', 'declined', '99'].includes(
-    normalized,
-  )
-}
-
-
 function sendUnauthenticated(reply: FastifyReply) {
   return reply
     .status(401)
@@ -506,5 +660,3 @@ function sendUnauthenticated(reply: FastifyReply) {
       message: 'Please log in to continue.',
     })
 }
-
-

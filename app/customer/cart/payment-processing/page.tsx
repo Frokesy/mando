@@ -13,14 +13,14 @@ export default function PaymentProcessingPage() {
   const showToast = useToastStore((s) => s.showToast);
   const checkoutOrder = useCartStore((s) => s.checkoutOrder);
   const clearCart = useCartStore((s) => s.clear);
-  const [queryOrderId, setQueryOrderId] = useState<string | null>(null);
+  const [queryOrderId] = useState<string | null>(() =>
+    typeof window === "undefined"
+      ? null
+      : new URLSearchParams(window.location.search).get("orderId"),
+  );
   const [pollingStatus, setPollingStatus] = useState("Waiting for payment confirmation...");
   const orderId = queryOrderId ?? checkoutOrder?.id;
   const orderNumber = checkoutOrder?.orderNumber;
-
-  useEffect(() => {
-    setQueryOrderId(new URLSearchParams(window.location.search).get("orderId"));
-  }, []);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -37,7 +37,7 @@ export default function PaymentProcessingPage() {
     let cancelled = false;
     let attempts = 0;
     const maxAttempts = 30;
-    let verifyAttempted = false;
+    let lastVerificationAttempt = -Infinity;
 
     async function confirmPayment(orderNumberFromApi?: string) {
       if (cancelled) return;
@@ -54,9 +54,9 @@ export default function PaymentProcessingPage() {
     }
 
     async function verifyPaymentFallback() {
-      if (verifyAttempted || cancelled) return false;
+      if (cancelled || attempts - lastVerificationAttempt < 4) return false;
 
-      verifyAttempted = true;
+      lastVerificationAttempt = attempts;
       setPollingStatus("Confirming payment...");
 
       const response = await fetch(`${API_BASE_URL}/customer/payments/checkout/${activeOrderId}/verify`, {
@@ -100,7 +100,7 @@ export default function PaymentProcessingPage() {
         const latestPayment = body.order.payments[0];
         const paymentStatus = latestPayment?.status;
 
-        if (paymentStatus === "verified" || body.order.status !== "pending_payment") {
+        if (paymentStatus === "verified") {
           await confirmPayment(body.order.orderNumber);
           return;
         }

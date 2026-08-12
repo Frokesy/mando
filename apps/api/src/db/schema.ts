@@ -980,6 +980,43 @@ export const payments = pgTable(
   ],
 )
 
+export const paymentProviderEvents = pgTable(
+  'payment_provider_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    provider: text('provider').notNull(),
+    source: text('source').notNull(),
+    paymentId: uuid('payment_id').references(() => payments.id, {
+      onDelete: 'set null',
+    }),
+    orderId: uuid('order_id').references(() => orders.id, {
+      onDelete: 'set null',
+    }),
+    merchantReference: text('merchant_reference'),
+    transactionReference: text('transaction_reference'),
+    reportedStatus: text('reported_status'),
+    verifiedStatus: text('verified_status'),
+    outcome: text('outcome').notNull(),
+    requestId: text('request_id'),
+    providerCorrelationId: text('provider_correlation_id'),
+    httpStatus: integer('http_status'),
+    payload: jsonb('payload'),
+    verificationResponse: jsonb('verification_response'),
+    errorMessage: text('error_message'),
+    receivedAt: timestampWithTimezone('received_at').notNull().defaultNow(),
+    processedAt: timestampWithTimezone('processed_at'),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    index('payment_provider_events_payment_id_index').on(table.paymentId),
+    index('payment_provider_events_order_id_index').on(table.orderId),
+    index('payment_provider_events_transaction_reference_index').on(
+      table.transactionReference,
+    ),
+    index('payment_provider_events_received_at_index').on(table.receivedAt),
+  ],
+)
+
 export const deliveries = pgTable(
   'deliveries',
   {
