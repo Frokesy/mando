@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import { randomBytes } from 'node:crypto'
-import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm'
+import { and, desc, eq, ilike, inArray, lt, or, sql } from 'drizzle-orm'
 import { z } from 'zod'
 
 import {
@@ -30,6 +30,7 @@ import {
   orderStatusEvents,
   orders,
   payoutAccounts,
+  paymentProviderEvents,
   payoutRequests,
   payments,
   profiles,
@@ -58,6 +59,14 @@ const loginBodySchema = z.object({
 
 const orderParamsSchema = z.object({
   orderId: z.uuid(),
+})
+
+const paymentLogQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(25),
+  source: z.enum(['webhook', 'manual_verification']).optional(),
+  outcome: z.string().trim().max(80).optional(),
+  reference: z.string().trim().max(200).optional(),
 })
 
 const vendorParamsSchema = z.object({
@@ -535,6 +544,64 @@ export async function adminRoutes(app: FastifyInstance) {
     ])
 
     return reply.status(200).send({ order: { ...order, items, timeline } })
+  })
+
+  app.get('/payment-logs', async (request, reply) => {
+    const auth = await requireAdmin(request.headers.cookie, reply)
+    if (!auth) return
+
+    const parsedQuery = paymentLogQuerySchema.safeParse(request.query)
+    if (!parsedQuery.success) {
+      return reply.status(400).send({
+        error: 'validation_error',
+        message: 'Please check the payment log filters.',
+      })
+    }
+
+    const { page, limit, source, outcome, reference } = parsedQuery.data
+    const filters = [
+      source ? eq(paymentProviderEvents.source, source) : null,
+      outcome ? eq(paymentProviderEvents.outcome, outcome) : null,
+      reference
+        ? or(
+            ilike(paymentProviderEvents.transactionReference, `%${reference}%`),
+            ilike(paymentProviderEvents.merchantReference, `%${reference}%`),
+            ilike(paymentProviderEvents.requestId, `%${reference}%`),
+          )
+        : null,
+    ].filter((filter): filter is NonNullable<typeof filter> => Boolean(filter))
+    const where = filters.length ? and(...filters) : undefined
+
+    const [events, [totalRow], outcomeRows] = await Promise.all([
+      database
+        .select()
+        .from(paymentProviderEvents)
+        .where(where)
+        .orderBy(desc(paymentProviderEvents.receivedAt))
+        .limit(limit)
+        .offset((page - 1) * limit),
+      database
+        .select({ count: sql<number>`count(*)::int` })
+        .from(paymentProviderEvents)
+        .where(where),
+      database
+        .select({ outcome: paymentProviderEvents.outcome })
+        .from(paymentProviderEvents)
+        .groupBy(paymentProviderEvents.outcome)
+        .orderBy(paymentProviderEvents.outcome),
+    ])
+
+    const total = totalRow?.count ?? 0
+    return reply.status(200).send({
+      events,
+      outcomes: outcomeRows.map((row) => row.outcome),
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
+      },
+    })
   })
 
   app.get('/vendors', async (_request, reply) => {
@@ -4150,5 +4217,4 @@ function isForeignKeyViolation(error: unknown) {
     (error instanceof Error && error.message.includes('violates foreign key constraint'))
   )
 }
-
 

@@ -3,7 +3,6 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
-  AuditLogIcon,
   FinancialsIcon,
   FoodCombosIcon,
   LogoutIcon,
@@ -120,7 +119,7 @@ const AdminDashboardLayout = ({ children }: { children: React.ReactNode }) => {
       icon: <NotificationIcon size={16} />,
       slug: "notifications",
     },
-    { id: 3, item: "Audit Log", icon: <AuditLogIcon />, slug: "audit" },
+    { id: 3, item: "Payment Logs", icon: <FinancialsIcon />, slug: "payment-logs" },
   ];
 
   const extrasItems = [
@@ -168,11 +167,11 @@ const AdminDashboardLayout = ({ children }: { children: React.ReactNode }) => {
 
   return (
     <div className="flex justify-between pl-8">
-      <aside className="w-[15%] items-start pr-4 py-10 sticky top-0 h-[100vh]">
-        <div className="space-y-6">
+      <aside className="sticky top-0 h-screen w-[15%] overflow-y-auto overscroll-contain py-10 pr-4">
+        <div className="flex min-h-full flex-col space-y-6 pb-6">
           <p className="text-[14px] font-semibold font-mono">mando</p>
 
-          <div className="flex flex-col justify-between items-start space-y-6 h-full">
+          <div className="flex flex-1 flex-col items-start justify-between space-y-6">
             <div className="flex flex-col space-y-1">
               <h2 className="text-[10px] text-[#404040] uppercase">
                 Main Menu
