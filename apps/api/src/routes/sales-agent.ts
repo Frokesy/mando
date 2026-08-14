@@ -624,11 +624,15 @@ async function getSalesAgentStats(userId: string) {
     .select({
       id: referrals.id,
       customerId: referrals.customerId,
+      firstEligibleOrderId: referrals.firstEligibleOrderId,
     })
     .from(referrals)
     .where(eq(referrals.salesAgentId, userId))
 
   const customerIds = referralRows.map((referral) => referral.customerId)
+  const firstEligibleOrderIds = referralRows
+    .map((referral) => referral.firstEligibleOrderId)
+    .filter((orderId): orderId is string => Boolean(orderId))
 
   const deliveredOrders =
     customerIds.length === 0
@@ -650,9 +654,15 @@ async function getSalesAgentStats(userId: string) {
           )
           .orderBy(desc(orders.createdAt))
 
+  const firstPurchaseOrders = deliveredOrders.filter((order) =>
+    firstEligibleOrderIds.includes(order.id),
+  )
+  const directReferralIds = new Set(referralRows.map((referral) => referral.id))
+
   const commissionRows = await database
     .select({
       commissionAmount: commissions.commissionAmount,
+      referralId: commissions.referralId,
       status: commissions.status,
     })
     .from(commissions)
@@ -667,18 +677,30 @@ async function getSalesAgentStats(userId: string) {
     (total, commission) => total + commission.commissionAmount,
     0,
   )
+  const directCommissionAmount = commissionRows
+    .filter((commission) => directReferralIds.has(commission.referralId))
+    .reduce((total, commission) => total + commission.commissionAmount, 0)
+  const downlineCommissionAmount = totalCommissionAmount - directCommissionAmount
 
   return {
     referralCount: referralRows.length,
-    successfulOrderCount: deliveredOrders.length,
+    successfulOrderCount: firstPurchaseOrders.length,
+    firstPurchaseCount: firstPurchaseOrders.length,
+    totalReferralOrderCount: deliveredOrders.length,
+    firstPurchaseRevenueAmount: firstPurchaseOrders.reduce(
+      (total, order) => total + order.totalAmount,
+      0,
+    ),
     trackedRevenueAmount: deliveredOrders.reduce(
       (total, order) => total + order.totalAmount,
       0,
     ),
+    directCommissionAmount,
+    downlineCommissionAmount,
     totalCommissionAmount,
     influencerThreshold: 10,
     remainingOrdersToInfluencer: Math.max(10 - deliveredOrders.length, 0),
-    recentOrders: deliveredOrders.slice(0, 10),
+    recentOrders: firstPurchaseOrders.slice(0, 10),
   }
 }
 

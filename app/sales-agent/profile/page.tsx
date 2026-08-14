@@ -50,6 +50,12 @@ type ReferralBody = {
   stats: {
     referralCount: number;
     successfulOrderCount: number;
+    firstPurchaseCount?: number;
+    totalReferralOrderCount?: number;
+    firstPurchaseRevenueAmount?: number;
+    trackedRevenueAmount?: number;
+    directCommissionAmount?: number;
+    downlineCommissionAmount?: number;
     totalCommissionAmount: number;
     recentOrders: {
       id: string;
@@ -114,7 +120,7 @@ export default function SalesAgentProfile() {
   }, [router, showToast]);
 
   useEffect(() => {
-    void loadProfile();
+    void Promise.resolve().then(loadProfile);
   }, [loadProfile]);
 
   const requestPayout = async () => {
@@ -232,8 +238,8 @@ export default function SalesAgentProfile() {
         <section className="mb-6">
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <h2 className="text-xl font-semibold text-[#141B34]">Tracked orders</h2>
-              <p className="text-sm text-[#6B6B6B]">Delivered orders from customers attributed to you.</p>
+              <h2 className="text-xl font-semibold text-[#141B34]">Qualified first purchases</h2>
+              <p className="text-sm text-[#6B6B6B]">Only each referred customer&apos;s first delivered order appears here.</p>
             </div>
           </div>
           <div className="space-y-3">
@@ -254,7 +260,7 @@ export default function SalesAgentProfile() {
                 </div>
               ))
             ) : (
-              <EmptyState text="No delivered tracked orders yet." />
+              <EmptyState text="No qualifying first purchases yet." />
             )}
           </div>
         </section>

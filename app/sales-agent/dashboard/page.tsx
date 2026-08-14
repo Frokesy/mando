@@ -40,7 +40,12 @@ type SalesDashboard = {
   stats: {
     referralCount: number;
     successfulOrderCount: number;
+    firstPurchaseCount?: number;
+    totalReferralOrderCount?: number;
+    firstPurchaseRevenueAmount?: number;
     trackedRevenueAmount: number;
+    directCommissionAmount?: number;
+    downlineCommissionAmount?: number;
     totalCommissionAmount: number;
     influencerThreshold: number;
     remainingOrdersToInfluencer: number;
@@ -85,7 +90,7 @@ export default function SalesAgentDashboard() {
   }, [router, showToast]);
 
   useEffect(() => {
-    void loadDashboard();
+    void Promise.resolve().then(loadDashboard);
   }, [loadDashboard]);
 
   const copyInfluencerLink = async () => {
@@ -189,20 +194,42 @@ export default function SalesAgentDashboard() {
           </div>
         </header>
 
-        <div className="mb-6 grid gap-4 sm:grid-cols-2">
+        <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <StatCard
-            label="Total commission"
-            value={formatCurrency(dashboard?.stats.totalCommissionAmount ?? 0)}
-            helper={`Tracked revenue ${formatCurrency(dashboard?.stats.trackedRevenueAmount ?? 0)}`}
+            label="Direct first-order commission"
+            value={formatCurrency(dashboard?.stats.directCommissionAmount ?? dashboard?.stats.totalCommissionAmount ?? 0)}
+            helper="Commission earned from customers' qualifying first purchases"
           />
           <StatCard
-            label="Successful orders"
-            value={`${dashboard?.stats.successfulOrderCount ?? 0}`}
+            label="Qualified first purchases"
+            value={`${dashboard?.stats.firstPurchaseCount ?? dashboard?.stats.successfulOrderCount ?? 0}`}
             helper={
               dashboard?.agent.salesAgent.tier === "influencer"
                 ? "Influencer tier unlocked"
                 : `${dashboard?.stats.remainingOrdersToInfluencer ?? 10} more to unlock influencer`
             }
+          />
+          {dashboard?.agent.salesAgent.tier === "influencer" ? (
+            <StatCard
+              label="Downline commission"
+              value={formatCurrency(dashboard.stats.downlineCommissionAmount ?? 0)}
+              helper="Commission earned from agents in your downline"
+            />
+          ) : null}
+          <StatCard
+            label="Total commission"
+            value={formatCurrency(dashboard?.stats.totalCommissionAmount ?? 0)}
+            helper="Direct and downline commission combined"
+          />
+          <StatCard
+            label="All referral-link orders"
+            value={`${dashboard?.stats.totalReferralOrderCount ?? dashboard?.stats.successfulOrderCount ?? 0}`}
+            helper={`Total order value ${formatCurrency(dashboard?.stats.trackedRevenueAmount ?? 0)}`}
+          />
+          <StatCard
+            label="First-purchase order value"
+            value={formatCurrency(dashboard?.stats.firstPurchaseRevenueAmount ?? dashboard?.stats.trackedRevenueAmount ?? 0)}
+            helper="Gross value of qualifying first purchases, not your commission"
           />
         </div>
 
