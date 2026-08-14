@@ -629,7 +629,12 @@ async function getSalesAgentStats(userId: string) {
       status: commissions.status,
     })
     .from(commissions)
-    .where(eq(commissions.salesAgentId, userId))
+    .where(
+      and(
+        eq(commissions.salesAgentId, userId),
+        inArray(commissions.status, ['earned', 'approved', 'paid']),
+      ),
+    )
 
   const totalCommissionAmount = commissionRows.reduce(
     (total, commission) => total + commission.commissionAmount,
@@ -844,7 +849,7 @@ async function getAvailableAgentPayoutAmount(userId: string) {
     .where(
       and(
         eq(commissions.salesAgentId, userId),
-        inArray(commissions.status, ['pending', 'earned', 'approved']),
+        inArray(commissions.status, ['earned', 'approved']),
       ),
     )
 

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { FaPhoneAlt } from "react-icons/fa";
 import StatsCard from "@/components/cards/StatsCard";
+import { TablePagination, useTablePagination } from "@/components/admin/TablePagination";
 import {
   CancelIcon,
   DeliveredIcon,
@@ -55,6 +56,7 @@ const AdminOrdersPage = () => {
   const [data, setData] = useState<OrdersResponse | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<AdminOrder | null>(null);
   const [loading, setLoading] = useState(true);
+  const orderPagination = useTablePagination(data?.orders ?? []);
 
   useEffect(() => {
     let mounted = true;
@@ -169,7 +171,7 @@ const AdminOrdersPage = () => {
             <p>Action</p>
           </div>
 
-          {loading ? <TableSkeleton columns={9} rows={7} /> : (data?.orders ?? []).map((order) => (
+          {loading ? <TableSkeleton columns={9} rows={7} /> : orderPagination.pageItems.map((order) => (
             <button
               key={order.id}
               type="button"
@@ -189,6 +191,7 @@ const AdminOrdersPage = () => {
               <p>View</p>
             </button>
           ))}
+          <TablePagination {...orderPagination} onPageChange={orderPagination.setPage} />
         </div>
 
         {selectedOrder ? (

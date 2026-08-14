@@ -26,7 +26,6 @@ import {
   restaurantEarnings,
   restaurantMembers,
   restaurants,
-  salesAgentProfiles,
   serviceAreas,
 } from '../db/schema.js'
 
@@ -132,8 +131,6 @@ const CHECKOUT_PROMO_CODES = [
   { code: 'LUNCH15', discountPercent: 15 },
 ]
 const RIDER_DELIVERY_EARNING_BPS = 8000
-const FIRST_ORDER_AGENT_COMMISSION_AMOUNT = 500
-const FIRST_ORDER_UPLINE_COMMISSION_AMOUNT = 100
 const CUSTOMER_CANCELLABLE_ORDER_STATUSES = [
   'pending_payment',
   'paid',
@@ -812,7 +809,6 @@ export async function customerRoutes(app: FastifyInstance) {
       (subtotalAmount * restaurantCommissionBps) / 10000,
     )
     const restaurantNetAmount = subtotalAmount - restaurantPlatformFeeAmount
-    const firstOrderReferral = await getUnqualifiedCustomerReferral(sessionContext.userId)
     const paymentIsBypassed =
       process.env.NODE_ENV !== 'production' && body.testBypassPayment === true
     const initialOrderStatus = paymentIsBypassed
@@ -925,38 +921,6 @@ export async function customerRoutes(app: FastifyInstance) {
         netAmount: restaurantNetAmount,
         status: 'pending',
       })
-
-      if (firstOrderReferral) {
-        await tx
-          .update(referrals)
-          .set({
-            firstEligibleOrderId: order.id,
-            status: 'qualified',
-          })
-          .where(eq(referrals.id, firstOrderReferral.id))
-
-        await tx.insert(commissions).values({
-          salesAgentId: firstOrderReferral.salesAgentId,
-          orderId: order.id,
-          referralId: firstOrderReferral.id,
-          rateBps: 0,
-          eligibleAmount: subtotalAmount,
-          commissionAmount: FIRST_ORDER_AGENT_COMMISSION_AMOUNT,
-          status: 'pending',
-        })
-
-        if (firstOrderReferral.uplineSalesAgentId) {
-          await tx.insert(commissions).values({
-            salesAgentId: firstOrderReferral.uplineSalesAgentId,
-            orderId: order.id,
-            referralId: firstOrderReferral.id,
-            rateBps: 0,
-            eligibleAmount: subtotalAmount,
-            commissionAmount: FIRST_ORDER_UPLINE_COMMISSION_AMOUNT,
-            status: 'pending',
-          })
-        }
-      }
 
       await tx.insert(orderStatusEvents).values({
         orderId: order.id,
@@ -1105,6 +1069,21 @@ export async function customerRoutes(app: FastifyInstance) {
         .update(deliveries)
         .set({ status: 'cancelled', updatedAt: new Date() })
         .where(eq(deliveries.orderId, order.id))
+
+      await tx
+        .update(restaurantEarnings)
+        .set({ status: 'reversed', updatedAt: new Date() })
+        .where(eq(restaurantEarnings.orderId, order.id))
+
+      await tx
+        .update(commissions)
+        .set({ status: 'reversed', updatedAt: new Date() })
+        .where(eq(commissions.orderId, order.id))
+
+      await tx
+        .update(referrals)
+        .set({ status: 'attributed', firstEligibleOrderId: null })
+        .where(eq(referrals.firstEligibleOrderId, order.id))
 
       await tx.insert(orderStatusEvents).values({
         orderId: order.id,
@@ -1364,26 +1343,6 @@ function getComboComponents(comboIds: string[]) {
     .from(comboItems)
     .innerJoin(menuItems, eq(comboItems.menuItemId, menuItems.id))
     .where(and(inArray(comboItems.comboId, comboIds), eq(menuItems.isAvailable, true)))
-}
-
-async function getUnqualifiedCustomerReferral(customerId: string) {
-  const [referral] = await database
-    .select({
-      id: referrals.id,
-      salesAgentId: referrals.salesAgentId,
-      uplineSalesAgentId: salesAgentProfiles.uplineSalesAgentId,
-    })
-    .from(referrals)
-    .innerJoin(salesAgentProfiles, eq(referrals.salesAgentId, salesAgentProfiles.userId))
-    .where(
-      and(
-        eq(referrals.customerId, customerId),
-        eq(referrals.status, 'attributed'),
-      ),
-    )
-    .limit(1)
-
-  return referral ?? null
 }
 
 type ComboComponent = Awaited<ReturnType<typeof getComboComponents>>[number]
@@ -1964,7 +1923,5 @@ function isValidBirthdayInput(value: string) {
     parsedDate.getUTCDate() === day
   )
 }
-
-
 
 

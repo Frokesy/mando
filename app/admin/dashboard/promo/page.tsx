@@ -24,6 +24,7 @@ import {
   FaUserFriends,
 } from "react-icons/fa";
 import StatsCard from "@/components/cards/StatsCard";
+import { TablePagination, useTablePagination } from "@/components/admin/TablePagination";
 
 const API_BASE_URL =
   (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000").replace(/\/+$/, "");
@@ -133,6 +134,8 @@ export default function AdminPromoPage() {
     if (filter === "All") return data.campaigns;
     return data.campaigns.filter((campaign) => campaign.status === filter.toLowerCase());
   }, [data.campaigns, filter]);
+  const campaignPagination = useTablePagination(filteredCampaigns);
+  const couponPagination = useTablePagination(data.coupons, 5);
 
   async function updateCampaignStatus(campaign: Campaign, status: CampaignStatus) {
     setNotice("");
@@ -183,7 +186,7 @@ export default function AdminPromoPage() {
             <p>Campaign</p><p>Channel</p><p>Audience</p><p>Budget</p><p>Redemptions</p><p>Revenue</p><p>Status</p>
           </div>
           <div className="space-y-1">
-            {filteredCampaigns.map((campaign) => (
+            {campaignPagination.pageItems.map((campaign) => (
               <button key={campaign.id} onClick={() => setSelectedCampaign(campaign)} className={`grid w-full grid-cols-[1.4fr_1fr_1fr_0.7fr_0.8fr_0.8fr_0.8fr] items-center gap-4 rounded-lg px-2 py-3 text-left text-[10px] text-[#6A7282] hover:bg-[#FFF7E0] ${selectedCampaign?.id === campaign.id ? "bg-[#FFF7E0]" : ""}`}>
                 <div className="flex min-w-0 items-center gap-3">
                   <div className="h-9 w-9 shrink-0 overflow-hidden rounded-xl bg-gray-100">
@@ -196,6 +199,7 @@ export default function AdminPromoPage() {
             ))}
             {!loading && filteredCampaigns.length === 0 ? <p className="py-8 text-center text-[11px] text-[#99A1AF]">No campaigns found.</p> : null}
           </div>
+          <TablePagination {...campaignPagination} onPageChange={campaignPagination.setPage} />
         </section>
 
         <aside className="sticky top-24 h-fit space-y-5">
@@ -228,7 +232,7 @@ export default function AdminPromoPage() {
             <h3 className="text-sm font-semibold text-[#101828]">Coupon Codes</h3>
             <p className="mt-1 text-[11px] text-[#99A1AF]">Active and scheduled redemption codes.</p>
             <div className="mt-4 space-y-3">
-              {data.coupons.map((coupon) => (
+              {couponPagination.pageItems.map((coupon) => (
                 <div key={coupon.code} className="rounded-xl bg-gray-50 p-3">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-[11px] font-semibold text-[#101828]">{coupon.code}</p>
@@ -241,6 +245,7 @@ export default function AdminPromoPage() {
                 </div>
               ))}
             </div>
+            <TablePagination {...couponPagination} onPageChange={couponPagination.setPage} />
           </section>
         </aside>
       </div>

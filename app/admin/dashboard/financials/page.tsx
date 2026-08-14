@@ -13,6 +13,7 @@ import {
   FaWallet,
 } from "react-icons/fa";
 import StatsCard from "@/components/cards/StatsCard";
+import { TablePagination, useTablePagination } from "@/components/admin/TablePagination";
 
 const API_BASE_URL =
   (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000").replace(/\/+$/, "");
@@ -114,6 +115,7 @@ export default function AdminFinancialsPage() {
       (transaction) => transaction.status === filter.toLowerCase() || transaction.type === filter.toLowerCase(),
     );
   }, [data.transactions, filter]);
+  const transactionPagination = useTablePagination(filteredTransactions);
 
   const stats = [
     { id: 1, statTitle: "Total Revenue", qty: formatCurrency(data.stats.totalRevenue), crease: "Mando retained", theme: "bg-[#ECFDF5]", increase: true, icon: <FaMoneyBillWave />, iconColor: "text-[#10B981]" },
@@ -182,7 +184,7 @@ export default function AdminFinancialsPage() {
           </div>
           <TableHeader />
           <div className="space-y-1">
-            {filteredTransactions.map((transaction) => (
+            {transactionPagination.pageItems.map((transaction) => (
               <button
                 key={transaction.id}
                 onClick={() => setSelectedTransaction(transaction)}
@@ -201,6 +203,7 @@ export default function AdminFinancialsPage() {
             ))}
             {!loading && filteredTransactions.length === 0 ? <p className="py-8 text-center text-[11px] text-[#99A1AF]">No transactions found.</p> : null}
           </div>
+          <TablePagination {...transactionPagination} onPageChange={transactionPagination.setPage} />
         </div>
 
         {selectedTransaction ? (
@@ -393,4 +396,3 @@ function formatCurrency(amount: number) {
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("en-NG", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
 }
-

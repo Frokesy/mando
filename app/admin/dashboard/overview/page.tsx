@@ -28,7 +28,21 @@ type AdminOrder = {
 type AdminOverviewData = {
   stats: {
     revenueAmount: number;
+    grossDeliveredAmount?: number;
+    mandoGrossRevenue?: number;
+    mandoNetRevenue?: number;
+    restaurantRevenue?: number;
+    riderRevenue?: number;
+    salesAgentRevenue?: number;
     orderCount: number;
+    userCount?: number;
+    userCounts?: {
+      customers: number;
+      riders: number;
+      salesAgents: number;
+      restaurantUsers: number;
+      admins: number;
+    };
     activeRiderCount: number;
     activeVendorCount: number;
     cancelRate: number;
@@ -91,12 +105,16 @@ const AdminOverview = () => {
     };
   }, []);
 
+  const legacyMandoRevenue = data?.stats.revenueAmount ?? data?.quickStats.totalRevenueAmount ?? 0;
+  const hasRevenueBreakdown = data?.stats.mandoGrossRevenue !== undefined;
+  const hasUserBreakdown = data?.stats.userCounts !== undefined;
+
   const overviewStats = [
     {
       id: 1,
-      statTitle: "Revenue",
-      qty: formatCurrency(data?.stats.revenueAmount ?? 0),
-      crease: "Live platform total",
+      statTitle: "Mando Revenue",
+      qty: formatCurrency(data?.stats.mandoNetRevenue ?? legacyMandoRevenue),
+      crease: "After agent commissions",
       theme: "bg-[#F0FDF4]",
       increase: true,
       icon: <FinancialsIcon />,
@@ -134,6 +152,16 @@ const AdminOverview = () => {
     },
     {
       id: 5,
+      statTitle: "Users",
+      qty: formatNumber(data?.stats.userCount ?? 0),
+      crease: "All registered roles",
+      theme: "bg-[#F0FDFA]",
+      increase: true,
+      icon: <OrderIcon />,
+      iconColor: "text-[#0D9488]",
+    },
+    {
+      id: 6,
       statTitle: "Cancel Rate",
       qty: `${(data?.stats.cancelRate ?? 0).toFixed(1)}%`,
       crease: "Cancelled / total",
@@ -171,11 +199,45 @@ const AdminOverview = () => {
         {loading ? "Loading platform activity..." : "Here's what's happening with your platform today."}
       </p>
 
-      <div className="mt-10 grid grid-cols-5 gap-3 pr-8">
+      <div className="mt-10 grid grid-cols-2 gap-3 pr-8 md:grid-cols-3 xl:grid-cols-6">
         {loading
-          ? Array.from({ length: 5 }).map((_, index) => <StatSkeleton key={index} />)
+          ? Array.from({ length: 6 }).map((_, index) => <StatSkeleton key={index} />)
           : overviewStats.map((item) => <StatsCard key={item.id} {...item} />)}
       </div>
+
+      <div className="mt-6 grid gap-6 pr-8 lg:grid-cols-2">
+        <OverviewBreakdown
+          title="Delivered revenue breakdown"
+          rows={[
+            ["Total amount made", data?.stats.grossDeliveredAmount ?? 0],
+            ["Restaurant earnings", data?.stats.restaurantRevenue ?? 0],
+            ["Rider earnings", data?.stats.riderRevenue ?? 0],
+            ["Sales-agent commissions", data?.stats.salesAgentRevenue ?? 0],
+            ["Mando gross revenue", data?.stats.mandoGrossRevenue ?? legacyMandoRevenue],
+            ["Mando net revenue", data?.stats.mandoNetRevenue ?? legacyMandoRevenue],
+          ]}
+          loading={loading}
+          formatter={formatCurrency}
+        />
+        <OverviewBreakdown
+          title="Users by role"
+          rows={[
+            ["Customers", data?.stats.userCounts?.customers ?? 0],
+            ["Riders", data?.stats.userCounts?.riders ?? 0],
+            ["Sales agents", data?.stats.userCounts?.salesAgents ?? 0],
+            ["Restaurant users", data?.stats.userCounts?.restaurantUsers ?? 0],
+            ["Admins", data?.stats.userCounts?.admins ?? 0],
+          ]}
+          loading={loading}
+          formatter={formatNumber}
+        />
+      </div>
+
+      {!loading && (!hasRevenueBreakdown || !hasUserBreakdown) ? (
+        <p className="mt-3 mr-8 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[11px] text-amber-800">
+          The API is still returning the older dashboard format. Restart or deploy the updated API to load the complete revenue and user breakdown.
+        </p>
+      ) : null}
 
       <div className="mt-10 grid grid-cols-3 gap-6 pr-8">
         <div className="rounded-xl border border-gray-100 bg-white p-3 shadow-sm">
@@ -304,6 +366,32 @@ const AdminOverview = () => {
     </div>
   );
 };
+
+function OverviewBreakdown({
+  title,
+  rows,
+  loading,
+  formatter,
+}: {
+  title: string;
+  rows: [string, number][];
+  loading: boolean;
+  formatter: (value: number) => string;
+}) {
+  return (
+    <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+      <h2 className="text-[13px] font-semibold text-[#101828]">{title}</h2>
+      <div className="mt-4 divide-y divide-gray-100">
+        {loading ? <StackSkeleton rows={rows.length} /> : rows.map(([label, value]) => (
+          <div key={label} className="flex items-center justify-between py-2.5 text-[11px]">
+            <span className="text-[#6A7282]">{label}</span>
+            <span className="font-semibold text-[#101828]">{formatter(value)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function TableCard({ title, columns, children }: { title: string; columns: string[]; children: React.ReactNode }) {
   return (

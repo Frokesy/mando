@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { FaBan, FaCheckCircle, FaClock, FaCloudUploadAlt, FaEdit, FaFilter, FaImage, FaPlus, FaSearch, FaShoppingBag, FaTrash, FaUtensils } from "react-icons/fa";
 import StatsCard from "@/components/cards/StatsCard";
+import { TablePagination, useTablePagination } from "@/components/admin/TablePagination";
 
 const API_BASE_URL =
   (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000").replace(/\/+$/, "");
@@ -121,6 +122,7 @@ export default function AdminFoodCombosPage() {
       return statusMatch && searchMatch;
     });
   }, [data.combos, search, status]);
+  const comboPagination = useTablePagination(filteredCombos);
 
   async function removeCombo(combo: Combo) {
     setNotice("");
@@ -174,7 +176,7 @@ export default function AdminFoodCombosPage() {
             <p>Combo</p><p>Restaurant</p><p>Category</p><p>Price</p><p>Orders</p><p>Rating</p><p>Status</p>
           </div>
           <div className="space-y-1">
-            {filteredCombos.map((combo) => (
+            {comboPagination.pageItems.map((combo) => (
               <button key={combo.id} onClick={() => setSelectedCombo(combo)} className={`grid w-full grid-cols-[1.6fr_1.2fr_0.8fr_0.7fr_0.7fr_0.7fr_0.7fr] items-center gap-4 rounded-lg px-2 py-3 text-left text-[10px] text-[#6A7282] hover:bg-[#FFF7E0] ${selectedCombo?.id === combo.id ? "bg-[#FFF7E0]" : ""}`}>
                 <div className="flex items-center gap-3"><div className="h-9 w-9 rounded-xl bg-[#FFFBEB]" /><div><p className="font-semibold text-[#101828]">{combo.name}</p><p className="text-[#99A1AF]">{combo.items.length} items</p></div></div>
                 <p>{combo.restaurant}</p><p>{combo.category}</p><p>{formatCurrency(combo.price)}</p><p>{combo.orders}</p><p>{combo.rating.toFixed(1)}</p><StatusPill status={combo.status} />
@@ -182,6 +184,7 @@ export default function AdminFoodCombosPage() {
             ))}
             {!loading && filteredCombos.length === 0 ? <p className="py-8 text-center text-[11px] text-[#99A1AF]">No combos found.</p> : null}
           </div>
+          <TablePagination {...comboPagination} onPageChange={comboPagination.setPage} />
         </div>
 
         {selectedCombo ? (
@@ -567,4 +570,3 @@ function formatDateTimeInput(value: string | null | undefined) {
   const offsetMs = date.getTimezoneOffset() * 60 * 1000;
   return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
 }
-

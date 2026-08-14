@@ -12,6 +12,7 @@ import {
 } from '../auth/index.js'
 import { getCurrentSessionContext } from '../auth/current-session.js'
 import { database } from '../db/client.js'
+import { isRealizedCommissionStatus } from '../finance/earnings.js'
 import { sendAgentCredentialsEmail } from '../email/agent-credentials.js'
 import {
   adminPayoutSettings,
@@ -419,6 +420,8 @@ export async function adminRoutes(app: FastifyInstance) {
       salesAgentRows,
       issueRows,
       earningRows,
+      commissionRows,
+      roleRows,
       recentOrders,
     ] = await Promise.all([
       database.select().from(orders),
@@ -429,25 +432,53 @@ export async function adminRoutes(app: FastifyInstance) {
       database.select().from(salesAgentProfiles),
       database.select().from(orderIssues),
       database.select().from(restaurantEarnings),
+      database.select().from(commissions),
+      database
+        .select({ role: userRoles.role, count: sql<number>`count(*)::int` })
+        .from(userRoles)
+        .groupBy(userRoles.role),
       selectAdminOrders(5),
     ])
 
     const totalOrders = orderRows.length
     const deliveredOrders = orderRows.filter((order) => order.status === 'delivered')
+    const deliveredOrderIds = new Set(deliveredOrders.map((order) => order.id))
     const cancelledOrders = orderRows.filter((order) => order.status === 'cancelled')
-    const serviceChargeRevenue = orderRows.reduce(
+    const serviceChargeRevenue = deliveredOrders.reduce(
       (total, order) => total + order.serviceChargeAmount,
       0,
     )
-    const platformFeeRevenue = earningRows.reduce(
+    const platformFeeRevenue = earningRows
+      .filter((earning) => deliveredOrderIds.has(earning.orderId))
+      .reduce(
       (total, earning) => total + earning.platformFeeAmount,
       0,
     )
-    const deliveryFeeRevenue = deliveryRows.reduce(
+    const deliveryFeeRevenue = deliveryRows
+      .filter((delivery) => deliveredOrderIds.has(delivery.orderId))
+      .reduce(
       (total, delivery) => total + Math.round(delivery.deliveryFeeAmount * 0.2),
       0,
     )
     const totalRevenue = serviceChargeRevenue + platformFeeRevenue + deliveryFeeRevenue
+    const grossDeliveredAmount = deliveredOrders.reduce(
+      (total, order) => total + order.totalAmount,
+      0,
+    )
+    const restaurantRevenue = earningRows
+      .filter((earning) => deliveredOrderIds.has(earning.orderId))
+      .reduce((total, earning) => total + earning.netAmount, 0)
+    const riderRevenue = deliveryRows
+      .filter((delivery) => deliveredOrderIds.has(delivery.orderId))
+      .reduce((total, delivery) => total + delivery.riderEarningAmount, 0)
+    const salesAgentRevenue = commissionRows
+      .filter(
+        (commission) =>
+          deliveredOrderIds.has(commission.orderId) &&
+          isRealizedCommissionStatus(commission.status),
+      )
+      .reduce((total, commission) => total + commission.commissionAmount, 0)
+    const userCounts = Object.fromEntries(roleRows.map((row) => [row.role, row.count]))
     const activeRiders = riderRows.filter((rider) =>
       ['available', 'busy'].includes(rider.availabilityStatus),
     )
@@ -464,7 +495,21 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.status(200).send({
       stats: {
         revenueAmount: totalRevenue,
+        grossDeliveredAmount,
+        mandoGrossRevenue: totalRevenue,
+        mandoNetRevenue: Math.max(totalRevenue - salesAgentRevenue, 0),
+        restaurantRevenue,
+        riderRevenue,
+        salesAgentRevenue,
         orderCount: totalOrders,
+        userCount: roleRows.reduce((total, row) => total + row.count, 0),
+        userCounts: {
+          customers: userCounts.customer ?? 0,
+          riders: userCounts.rider ?? 0,
+          salesAgents: userCounts.sales_agent ?? 0,
+          restaurantUsers: userCounts.restaurant ?? 0,
+          admins: userCounts.admin ?? 0,
+        },
         activeRiderCount: activeRiders.length,
         activeVendorCount: activeRestaurants.length,
         cancelRate: totalOrders > 0 ? (cancelledOrders.length / totalOrders) * 100 : 0,
@@ -510,7 +555,7 @@ export async function adminRoutes(app: FastifyInstance) {
     const auth = await requireAdmin(request.headers.cookie, reply)
     if (!auth) return
 
-    const orderRows = await selectAdminOrders(50)
+    const orderRows = await selectAdminOrders(10_000)
 
     return reply.status(200).send({
       stats: buildOrderStats(orderRows),
@@ -1451,19 +1496,36 @@ export async function adminRoutes(app: FastifyInstance) {
       })
     }
 
-    const [updatedPayment] = await database
-      .update(payments)
-      .set({
-        status: 'refunded',
-        updatedAt: new Date(),
-      })
-      .where(eq(payments.id, payment.id))
-      .returning({ id: payments.id, orderId: payments.orderId })
+    const updatedPayment = await database.transaction(async (tx) => {
+      const now = new Date()
+      const [updated] = await tx
+        .update(payments)
+        .set({ status: 'refunded', updatedAt: now })
+        .where(eq(payments.id, payment.id))
+        .returning({ id: payments.id, orderId: payments.orderId })
 
-    await database
-      .update(orders)
-      .set({ status: 'refunded', updatedAt: new Date() })
-      .where(eq(orders.id, updatedPayment.orderId))
+      await tx
+        .update(orders)
+        .set({ status: 'refunded', updatedAt: now })
+        .where(eq(orders.id, updated.orderId))
+
+      await tx
+        .update(commissions)
+        .set({ status: 'reversed', updatedAt: now })
+        .where(eq(commissions.orderId, updated.orderId))
+
+      await tx
+        .update(restaurantEarnings)
+        .set({ status: 'reversed', updatedAt: now })
+        .where(eq(restaurantEarnings.orderId, updated.orderId))
+
+      await tx
+        .update(referrals)
+        .set({ status: 'attributed', firstEligibleOrderId: null })
+        .where(eq(referrals.firstEligibleOrderId, updated.orderId))
+
+      return updated
+    })
 
     return reply.status(200).send({
       transaction: await selectAdminFinancialTransaction(updatedPayment.id),
@@ -2386,7 +2448,7 @@ async function selectAdminFinancials() {
       database.select().from(restaurantEarnings),
       database.select().from(deliveries),
       database.select().from(payoutRequests).orderBy(desc(payoutRequests.requestedAt)),
-      selectAdminOrders(100),
+      selectAdminOrders(10_000),
       selectAdminSetting('financial_service_charges', {
         serviceChargeAmount: 50,
         deliveryFeeAmount: 0,
@@ -2400,19 +2462,22 @@ async function selectAdminFinancials() {
         .orderBy(serviceAreas.name),
     ])
 
-  const serviceChargeRevenue = orderRows.reduce(
-    (total, order) => total + order.serviceChargeAmount,
-    0,
+  const completedOrderIds = new Set(
+    orderRows.filter((order) => order.status === 'delivered').map((order) => order.id),
   )
-  const restaurantCommissionRevenue = earningRows.reduce(
-    (total, earning) => total + earning.platformFeeAmount,
-    0,
-  )
-  const deliveryCommissionRevenue = deliveryRows.reduce(
-    (total, delivery) =>
-      total + Math.max(delivery.deliveryFeeAmount - delivery.riderEarningAmount, 0),
-    0,
-  )
+  const serviceChargeRevenue = orderRows
+    .filter((order) => completedOrderIds.has(order.id))
+    .reduce((total, order) => total + order.serviceChargeAmount, 0)
+  const restaurantCommissionRevenue = earningRows
+    .filter((earning) => completedOrderIds.has(earning.orderId))
+    .reduce((total, earning) => total + earning.platformFeeAmount, 0)
+  const deliveryCommissionRevenue = deliveryRows
+    .filter((delivery) => completedOrderIds.has(delivery.orderId))
+    .reduce(
+      (total, delivery) =>
+        total + Math.max(delivery.deliveryFeeAmount - delivery.riderEarningAmount, 0),
+      0,
+    )
   const totalPayouts = payoutRows
     .filter((request) => ['approved', 'processing', 'paid'].includes(request.status))
     .reduce((total, request) => total + request.amount, 0)
@@ -3001,10 +3066,10 @@ async function selectAdminSalesAgents() {
 
   const agents = agentRows.map((agent) => {
     const agentReferrals = referralsByAgentId.get(agent.id) ?? []
-    const agentCommissions = commissionsByAgentId.get(agent.id) ?? []
-    const successfulOrders = agentCommissions.filter((commission) =>
-      ['earned', 'approved', 'paid'].includes(commission.status),
-    ).length
+    const agentCommissions = (commissionsByAgentId.get(agent.id) ?? []).filter(
+      (commission) => isRealizedCommissionStatus(commission.status),
+    )
+    const successfulOrders = agentCommissions.length
 
     return {
       id: agent.id,
@@ -3297,7 +3362,17 @@ async function selectAdminRiders() {
 
   const riderIds = riderRows.map((rider) => rider.id)
   const deliveryRows = riderIds.length
-    ? await database.select().from(deliveries).where(inArray(deliveries.riderId, riderIds))
+    ? await database
+        .select({ delivery: deliveries })
+        .from(deliveries)
+        .innerJoin(orders, eq(deliveries.orderId, orders.id))
+        .where(
+          and(
+            inArray(deliveries.riderId, riderIds),
+            eq(orders.status, 'delivered'),
+          ),
+        )
+        .then((rows) => rows.map((row) => row.delivery))
     : []
   const requestRows = riderIds.length
     ? await database.select().from(payoutRequests).where(inArray(payoutRequests.userId, riderIds))
@@ -3413,7 +3488,17 @@ async function selectAdminRiderCommissions() {
       ? database.select().from(payoutAccounts).where(inArray(payoutAccounts.id, accountIds))
       : [],
     riderIds.length
-      ? database.select().from(deliveries).where(inArray(deliveries.riderId, riderIds))
+      ? database
+          .select({ delivery: deliveries })
+          .from(deliveries)
+          .innerJoin(orders, eq(deliveries.orderId, orders.id))
+          .where(
+            and(
+              inArray(deliveries.riderId, riderIds),
+              eq(orders.status, 'delivered'),
+            ),
+          )
+          .then((rows) => rows.map((row) => row.delivery))
       : [],
   ])
   const riderById = new Map(riderRows.map((rider) => [rider.userId, rider]))
@@ -4217,4 +4302,3 @@ function isForeignKeyViolation(error: unknown) {
     (error instanceof Error && error.message.includes('violates foreign key constraint'))
   )
 }
-

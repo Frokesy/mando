@@ -21,6 +21,7 @@ import {
 } from "react-icons/fa";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import StatsCard from "@/components/cards/StatsCard";
+import { TablePagination, useTablePagination } from "@/components/admin/TablePagination";
 import { useToastStore } from "@/store/toastStore";
 
 const API_BASE_URL =
@@ -124,6 +125,7 @@ export default function AdminSalesPage() {
     if (status === "All") return data.agents;
     return data.agents.filter((agent) => agent.status === status.toLowerCase());
   }, [data.agents, status]);
+  const agentPagination = useTablePagination(filteredAgents);
 
   const highestAgent = useMemo(
     () => [...data.agents].sort((a, b) => b.revenue - a.revenue)[0] ?? null,
@@ -301,7 +303,7 @@ export default function AdminSalesPage() {
             <p>Agent</p><p>Type</p><p>Agent Code</p><p>Avg Transactions</p><p>Commission Rate</p><p>Referrals</p><p>Revenue</p><p>Commission</p><p>Status</p><p>Action</p>
           </div>
           <div className="space-y-1">
-            {filteredAgents.map((agent) => (
+            {agentPagination.pageItems.map((agent) => (
               <div key={agent.id} className="relative">
                 <button onClick={() => openProfile(agent)} className={`grid w-full grid-cols-[1.3fr_0.7fr_0.85fr_0.85fr_0.9fr_0.7fr_0.8fr_0.8fr_0.75fr_46px] items-center gap-4 rounded-lg px-2 py-3 text-left text-[10px] text-[#6A7282] hover:bg-[#FFF7E0] ${selectedAgent?.id === agent.id ? "bg-[#FFF7E0]" : ""}`}>
                   <AgentIdentity agent={agent} />
@@ -333,6 +335,7 @@ export default function AdminSalesPage() {
             ))}
             {!loading && filteredAgents.length === 0 ? <p className="py-8 text-center text-[11px] text-[#99A1AF]">No sales agents found.</p> : null}
           </div>
+          <TablePagination {...agentPagination} onPageChange={agentPagination.setPage} />
         </div>
 
         {selectedAgent ? (

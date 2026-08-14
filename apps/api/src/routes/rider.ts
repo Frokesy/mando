@@ -10,6 +10,7 @@ import {
   verifyPassword,
 } from '../auth/index.js'
 import { database } from '../db/client.js'
+import { canQualifyReferralFromDeliveredOrder } from '../finance/earnings.js'
 import {
   authSessions,
   commissions,
@@ -21,15 +22,19 @@ import {
   payoutAccounts,
   payoutRequests,
   profiles,
+  referrals,
   restaurantEarnings,
   restaurants,
   riderProfiles,
   riderServiceAreas,
+  salesAgentProfiles,
   serviceAreas,
   users,
 } from '../db/schema.js'
 
 const RIDER_DELIVERY_EARNING_BPS = 8000
+const FIRST_ORDER_AGENT_COMMISSION_AMOUNT = 500
+const FIRST_ORDER_UPLINE_COMMISSION_AMOUNT = 100
 
 const availabilityBodySchema = z.object({
   availabilityStatus: z.enum(['offline', 'available', 'busy']),
@@ -451,6 +456,7 @@ async function updateDeliveryAssignment(
       orderId: orders.id,
       orderNumber: orders.orderNumber,
       orderStatus: orders.status,
+      orderSubtotalAmount: orders.subtotalAmount,
       customerId: orders.customerId,
     })
     .from(deliveries)
@@ -562,14 +568,117 @@ async function updateDeliveryAssignment(
       .where(eq(riderProfiles.userId, auth.userId))
 
     if (options.action === 'delivered') {
+      const [referral] = await tx
+        .select({
+          id: referrals.id,
+          status: referrals.status,
+          firstEligibleOrderId: referrals.firstEligibleOrderId,
+          salesAgentId: referrals.salesAgentId,
+          uplineSalesAgentId: salesAgentProfiles.uplineSalesAgentId,
+        })
+        .from(referrals)
+        .innerJoin(salesAgentProfiles, eq(referrals.salesAgentId, salesAgentProfiles.userId))
+        .where(eq(referrals.customerId, target.customerId))
+        .limit(1)
+
+      let previousOrderStatus: string | null = null
+      if (referral?.status === 'qualified' && referral.firstEligibleOrderId) {
+        const [previousOrder] = await tx
+          .select({ status: orders.status })
+          .from(orders)
+          .where(eq(orders.id, referral.firstEligibleOrderId))
+          .limit(1)
+        previousOrderStatus = previousOrder?.status ?? null
+      }
+
+      const referralCanQualify = referral
+        ? canQualifyReferralFromDeliveredOrder(referral.status, previousOrderStatus)
+        : false
+      let referralQualifiedForCurrentOrder =
+        referral?.status === 'qualified' &&
+        referral.firstEligibleOrderId === target.orderId
+
+      if (referral && referralCanQualify) {
+        const claimCondition = referral.status === 'attributed'
+          ? and(eq(referrals.id, referral.id), eq(referrals.status, 'attributed'))
+          : referral.firstEligibleOrderId
+            ? and(
+                eq(referrals.id, referral.id),
+                eq(referrals.firstEligibleOrderId, referral.firstEligibleOrderId),
+              )
+            : and(eq(referrals.id, referral.id), eq(referrals.status, 'qualified'))
+        const [claimedReferral] = await tx
+          .update(referrals)
+          .set({
+            status: 'qualified',
+            firstEligibleOrderId: target.orderId,
+          })
+          .where(claimCondition)
+          .returning({ id: referrals.id })
+
+        if (claimedReferral) {
+          referralQualifiedForCurrentOrder = true
+          if (referral.firstEligibleOrderId && referral.firstEligibleOrderId !== target.orderId) {
+            await tx
+              .update(commissions)
+              .set({ status: 'reversed', updatedAt: now })
+              .where(eq(commissions.orderId, referral.firstEligibleOrderId))
+          }
+
+          await tx.insert(commissions).values({
+            salesAgentId: referral.salesAgentId,
+            orderId: target.orderId,
+            referralId: referral.id,
+            rateBps: 0,
+            eligibleAmount: target.orderSubtotalAmount,
+            commissionAmount: FIRST_ORDER_AGENT_COMMISSION_AMOUNT,
+            status: 'earned',
+            earnedAt: now,
+          }).onConflictDoUpdate({
+            target: [commissions.salesAgentId, commissions.orderId],
+            set: {
+              referralId: referral.id,
+              eligibleAmount: target.orderSubtotalAmount,
+              commissionAmount: FIRST_ORDER_AGENT_COMMISSION_AMOUNT,
+              status: 'earned',
+              earnedAt: now,
+              updatedAt: now,
+            },
+          })
+
+          if (referral.uplineSalesAgentId) {
+            await tx.insert(commissions).values({
+              salesAgentId: referral.uplineSalesAgentId,
+              orderId: target.orderId,
+              referralId: referral.id,
+              rateBps: 0,
+              eligibleAmount: target.orderSubtotalAmount,
+              commissionAmount: FIRST_ORDER_UPLINE_COMMISSION_AMOUNT,
+              status: 'earned',
+              earnedAt: now,
+            }).onConflictDoUpdate({
+              target: [commissions.salesAgentId, commissions.orderId],
+              set: {
+                referralId: referral.id,
+                eligibleAmount: target.orderSubtotalAmount,
+                commissionAmount: FIRST_ORDER_UPLINE_COMMISSION_AMOUNT,
+                status: 'earned',
+                earnedAt: now,
+                updatedAt: now,
+              },
+            })
+          }
+        }
+      }
+
       await tx
         .update(commissions)
-        .set({
-          status: 'earned',
-          earnedAt: now,
-          updatedAt: now,
-        })
-        .where(eq(commissions.orderId, target.orderId))
+        .set(
+          referralQualifiedForCurrentOrder
+            ? { status: 'earned', earnedAt: now, updatedAt: now }
+            : { status: 'reversed', updatedAt: now },
+        )
+        .where(and(eq(commissions.orderId, target.orderId), eq(commissions.status, 'pending')))
 
       const earnedCommissions = await tx
         .select({
@@ -577,7 +686,12 @@ async function updateDeliveryAssignment(
           commissionAmount: commissions.commissionAmount,
         })
         .from(commissions)
-        .where(eq(commissions.orderId, target.orderId))
+        .where(
+          and(
+            eq(commissions.orderId, target.orderId),
+            eq(commissions.status, 'earned'),
+          ),
+        )
 
       if (earnedCommissions.length > 0) {
         await tx.insert(notifications).values(
@@ -807,7 +921,13 @@ async function listDeliveryHistory(riderId: string, limit: number) {
     .from(deliveries)
     .innerJoin(orders, eq(deliveries.orderId, orders.id))
     .innerJoin(restaurants, eq(orders.restaurantId, restaurants.id))
-    .where(and(eq(deliveries.riderId, riderId), eq(deliveries.status, 'delivered')))
+    .where(
+      and(
+        eq(deliveries.riderId, riderId),
+        eq(deliveries.status, 'delivered'),
+        eq(orders.status, 'delivered'),
+      ),
+    )
     .orderBy(desc(deliveries.deliveredAt))
     .limit(limit)
 
@@ -892,7 +1012,14 @@ async function getAvailableRiderPayoutAmount(userId: string) {
   const deliveredRows = await database
     .select({ riderEarningAmount: deliveries.riderEarningAmount })
     .from(deliveries)
-    .where(and(eq(deliveries.riderId, userId), eq(deliveries.status, 'delivered')))
+    .innerJoin(orders, eq(deliveries.orderId, orders.id))
+    .where(
+      and(
+        eq(deliveries.riderId, userId),
+        eq(deliveries.status, 'delivered'),
+        eq(orders.status, 'delivered'),
+      ),
+    )
 
   const requestedRows = await database
     .select({ amount: payoutRequests.amount })
@@ -979,5 +1106,3 @@ function sendUnauthenticated(reply: FastifyReply) {
       message: 'Please log in to continue.',
     })
 }
-
-

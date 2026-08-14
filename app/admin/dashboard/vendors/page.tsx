@@ -18,6 +18,7 @@ import {
   FaWallet,
 } from "react-icons/fa";
 import StatsCard from "@/components/cards/StatsCard";
+import { TablePagination, useTablePagination } from "@/components/admin/TablePagination";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import { useToastStore } from "@/store/toastStore";
 
@@ -134,6 +135,7 @@ const AdminVendorsPage = () => {
   const [editMenuItem, setEditMenuItem] = useState<VendorMenuItem | null>(null);
   const [deletingMenuItemId, setDeletingMenuItemId] = useState<string | null>(null);
   const [confirmDeleteItem, setConfirmDeleteItem] = useState<VendorMenuItem | null>(null);
+  const vendorPagination = useTablePagination(data?.vendors ?? []);
 
   async function loadVendors() {
     setLoading(true);
@@ -370,7 +372,7 @@ const AdminVendorsPage = () => {
             {loading ? (
               <TableSkeleton columns={11} rows={6} />
             ) : (
-              (data?.vendors ?? []).map((vendor) => (
+              vendorPagination.pageItems.map((vendor) => (
               <button
                 key={vendor.id}
                 type="button"
@@ -394,6 +396,7 @@ const AdminVendorsPage = () => {
               ))
             )}
           </div>
+          <TablePagination {...vendorPagination} onPageChange={vendorPagination.setPage} />
         </div>
 
         {selectedVendor ? (
@@ -1591,6 +1594,5 @@ function formatDate(value: string) {
 }
 
 export default AdminVendorsPage;
-
 
 

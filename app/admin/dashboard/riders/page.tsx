@@ -17,6 +17,7 @@ import {
   FaWallet,
 } from "react-icons/fa";
 import StatsCard from "@/components/cards/StatsCard";
+import { TablePagination, useTablePagination } from "@/components/admin/TablePagination";
 import { useToastStore } from "@/store/toastStore";
 
 const API_BASE_URL =
@@ -152,6 +153,7 @@ export default function AdminRidersPage() {
       ),
     [data.riders, filters],
   );
+  const riderPagination = useTablePagination(filteredRiders);
 
   const stats = [
     { id: 1, statTitle: "Total Riders", qty: String(data.stats.total), crease: "All riders", theme: "bg-[#FFFBEB]", increase: true, icon: <FaMotorcycle />, iconColor: "text-[#FE9A00]" },
@@ -269,7 +271,7 @@ export default function AdminRidersPage() {
             {!loading && filteredRiders.length === 0 ? (
               <div className="rounded-lg px-3 py-8 text-center text-[11px] text-[#99A1AF]">No riders found.</div>
             ) : null}
-            {!loading && filteredRiders.map((rider) => (
+            {!loading && riderPagination.pageItems.map((rider) => (
               <button
                 key={rider.id}
                 onClick={() => setSelectedRider(rider)}
@@ -287,6 +289,7 @@ export default function AdminRidersPage() {
               </button>
             ))}
           </div>
+          <TablePagination {...riderPagination} onPageChange={riderPagination.setPage} />
         </div>
 
         {selectedRider ? (

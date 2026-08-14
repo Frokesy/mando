@@ -6,12 +6,15 @@ import { getCurrentSessionContext } from '../auth/current-session.js'
 import { serializeClearSessionCookie } from '../auth/index.js'
 import { database } from '../db/client.js'
 import {
+  commissions,
   notifications,
   orderStatusEvents,
   orders,
   paymentProviderEvents,
   payments,
   profiles,
+  referrals,
+  restaurantEarnings,
   restaurantMembers,
   users,
 } from '../db/schema.js'
@@ -214,8 +217,11 @@ async function verifyCheckoutManually(
       note: 'Payment independently verified with RoutePay.',
     })
   } else if (verification === 'failed' && order.paymentStatus !== 'verified') {
-    await database.update(payments).set({ status: 'failed', updatedAt: new Date() })
-      .where(eq(payments.id, order.paymentId))
+    await database.transaction(async (tx) => {
+      await tx.update(payments).set({ status: 'failed', updatedAt: new Date() })
+        .where(eq(payments.id, order.paymentId))
+      await reverseUncompletedOrderEarnings(tx, order.id)
+    })
     return reply.status(402).send({
       error: 'payment_failed',
       message: 'RoutePay reports that this payment failed.',
@@ -339,13 +345,13 @@ async function handleRoutePayWebhook(
     })
   } else if (verification === 'failed' && payment.paymentStatus !== 'verified') {
     const now = new Date()
-    await database
-      .update(payments)
-      .set({
-        status: 'failed',
-        updatedAt: now,
-      })
-      .where(eq(payments.id, payment.paymentId))
+    await database.transaction(async (tx) => {
+      await tx
+        .update(payments)
+        .set({ status: 'failed', updatedAt: now })
+        .where(eq(payments.id, payment.paymentId))
+      await reverseUncompletedOrderEarnings(tx, payment.id)
+    })
   }
 
   return reply.status(200).send({
@@ -353,6 +359,25 @@ async function handleRoutePayWebhook(
     matched: true,
     status: verification === 'successful' ? 'verified' : verification,
   })
+}
+
+async function reverseUncompletedOrderEarnings(
+  tx: Parameters<Parameters<typeof database.transaction>[0]>[0],
+  orderId: string,
+) {
+  const now = new Date()
+  await tx
+    .update(commissions)
+    .set({ status: 'reversed', updatedAt: now })
+    .where(eq(commissions.orderId, orderId))
+  await tx
+    .update(restaurantEarnings)
+    .set({ status: 'reversed', updatedAt: now })
+    .where(eq(restaurantEarnings.orderId, orderId))
+  await tx
+    .update(referrals)
+    .set({ status: 'attributed', firstEligibleOrderId: null })
+    .where(eq(referrals.firstEligibleOrderId, orderId))
 }
 
 async function getPendingCustomerOrder(customerId: string, orderId: string) {
