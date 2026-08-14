@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import Link from "next/link";
 import { FiEdit3, FiSend } from "react-icons/fi";
 import ConfirmationModal from "@/components/ConfirmationModal";
+import PayoutAccountModal from "@/components/PayoutAccountModal";
 import RiderBottomNav from "@/components/RiderBottomNav";
 import { ArrowLeftIcon, DefaultUserIcon } from "@/components/svgs/DefaultIcons";
 import { useToastStore } from "@/store/toastStore";
@@ -32,6 +33,7 @@ type RiderProfile = {
     };
   };
   payoutAccount: {
+    bankName?: string;
     accountName: string;
     accountNumberLast4: string;
     isVerified: boolean;
@@ -311,32 +313,7 @@ export default function RiderAccount() {
         onClose={() => setShowPayoutConfirmation(false)}
         onConfirm={() => void requestPayout()}
       />
-      {showPayoutDetails && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 px-4">
-          <div className="w-full max-w-[390px] rounded-3xl bg-white p-6 shadow-2xl">
-            <h2 className="text-xl font-semibold text-[#141B34]">Payout details</h2>
-            <p className="mt-3 text-sm leading-6 text-[#6B6B6B]">
-              Rider payout accounts are added and verified by admin during onboarding. Send
-              your updated bank details to admin, then refresh this page after it is changed.
-            </p>
-            <div className="mt-4 rounded-3xl bg-[#F7F4E3] p-4">
-              <p className="text-sm text-[#6B6B6B]">Current account</p>
-              <p className="mt-2 font-semibold text-[#141B34]">
-                {profile?.payoutAccount
-                  ? `${profile.payoutAccount.accountName} - ****${profile.payoutAccount.accountNumberLast4}`
-                  : "No payout account added yet"}
-              </p>
-            </div>
-            <button
-              type="button"
-              className="mt-5 w-full rounded-2xl bg-[#141B34] py-3 text-sm font-semibold text-white"
-              onClick={() => setShowPayoutDetails(false)}
-            >
-              Got it
-            </button>
-          </div>
-        </div>
-      )}
+      <PayoutAccountModal open={showPayoutDetails} endpoint={`${API_BASE_URL}/rider/payout-account`} account={profile?.payoutAccount ?? null} onClose={() => setShowPayoutDetails(false)} onSaved={loadAccount} />
     </motion.div>
   );
 }

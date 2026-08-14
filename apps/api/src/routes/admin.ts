@@ -13,6 +13,10 @@ import {
 import { getCurrentSessionContext } from '../auth/current-session.js'
 import { database } from '../db/client.js'
 import { isRealizedCommissionStatus } from '../finance/earnings.js'
+import {
+  decryptPayoutAccountNumber,
+  encryptPayoutAccountNumber,
+} from '../finance/payout-accounts.js'
 import { sendAgentCredentialsEmail } from '../email/agent-credentials.js'
 import {
   adminPayoutSettings,
@@ -2191,6 +2195,9 @@ async function selectAdminVendorCommissions() {
       const clientPaid = sum(vendorEarnings.map((earning) => earning.grossAmount))
       const mandoCut = sum(vendorEarnings.map((earning) => earning.platformFeeAmount))
       const account = accountById.get(request.payoutAccountId)
+      const accountNumber = account
+        ? decryptPayoutAccountNumber(account.accountNumberEncrypted)
+        : null
 
       return {
         id: request.id,
@@ -2203,7 +2210,7 @@ async function selectAdminVendorCommissions() {
           ? `${account.bankCode} • ${account.accountNumberLast4}`
           : 'Bank transfer',
         payoutDetails: account
-          ? `${account.accountName} • ****${account.accountNumberLast4}`
+          ? `${account.accountName} • ${accountNumber ?? `****${account.accountNumberLast4}`}`
           : 'No payout account details',
         requestDate: request.requestedAt,
         status: request.status,
@@ -3148,7 +3155,7 @@ async function createAdminSalesAgent(input: z.infer<typeof salesAgentBodySchema>
       userId: user.id,
       bankCode: input.bankName,
       accountName: input.accountName,
-      accountNumberEncrypted: `admin-collected-${input.accountNumber.slice(-4)}`,
+      accountNumberEncrypted: encryptPayoutAccountNumber(input.accountNumber),
       accountNumberLast4: input.accountNumber.slice(-4),
       isVerified: true,
     })
@@ -3522,6 +3529,9 @@ async function selectAdminRiderCommissions() {
         0,
       )
       const account = accountById.get(request.payoutAccountId)
+      const accountNumber = account
+        ? decryptPayoutAccountNumber(account.accountNumberEncrypted)
+        : null
 
       return {
         id: request.id,
@@ -3534,7 +3544,7 @@ async function selectAdminRiderCommissions() {
           ? `${account.bankCode} • ${account.accountNumberLast4}`
           : 'Bank transfer',
         payoutDetails: account
-          ? `${account.accountName} • ****${account.accountNumberLast4}`
+          ? `${account.accountName} • ${accountNumber ?? `****${account.accountNumberLast4}`}`
           : 'No payout account details',
         requestDate: request.requestedAt,
         status: request.status,
@@ -3588,7 +3598,7 @@ async function createAdminRider(input: z.infer<typeof riderBodySchema>) {
     userId: user.id,
     bankCode: input.bankName,
     accountName: input.accountName,
-    accountNumberEncrypted: `admin-collected-${accountNumberLast4}`,
+    accountNumberEncrypted: encryptPayoutAccountNumber(input.accountNumber),
     accountNumberLast4,
     isVerified: true,
   })

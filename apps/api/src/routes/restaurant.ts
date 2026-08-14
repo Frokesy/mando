@@ -10,6 +10,7 @@ import {
 } from '../auth/index.js'
 import { getCurrentSessionContext } from '../auth/current-session.js'
 import { database } from '../db/client.js'
+import { saveRestaurantPayoutAccount } from '../finance/payout-accounts.js'
 import {
   authSessions,
   orderIssues,
@@ -47,6 +48,12 @@ const rejectOrderBodySchema = z.object({
 
 const notificationParamsSchema = z.object({
   notificationId: z.uuid(),
+})
+
+const payoutAccountBodySchema = z.object({
+  bankName: z.string().trim().min(2).max(100),
+  accountName: z.string().trim().min(2).max(150),
+  accountNumber: z.string().trim().regex(/^\d{10}$/, 'Account number must be 10 digits.'),
 })
 
 export async function restaurantRoutes(app: FastifyInstance) {
@@ -171,6 +178,23 @@ export async function restaurantRoutes(app: FastifyInstance) {
         readyForPickupCount: ordersList.filter(
           (order) => order.status === 'ready_for_pickup',
         ).length,
+      },
+    })
+  })
+
+  app.put('/payout-account', async (request, reply) => {
+    const context = await requireRestaurant(request.headers.cookie, reply)
+    if (!context) return
+    const body = payoutAccountBodySchema.safeParse(request.body)
+    if (!body.success) return reply.status(400).send({ error: 'validation_error', message: body.error.issues[0]?.message ?? 'Please check the bank details.' })
+
+    const account = await saveRestaurantPayoutAccount(context.restaurant.id, body.data)
+    return reply.status(200).send({
+      payoutAccount: {
+        bankName: account.bankCode,
+        accountName: account.accountName,
+        accountNumberLast4: account.accountNumberLast4,
+        isVerified: account.isVerified,
       },
     })
   })
@@ -393,7 +417,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
     if (!payoutAccount) {
       return reply.status(409).send({
         error: 'missing_payout_account',
-        message: 'A payout account must be added by admin before requesting payout.',
+        message: 'Add your payout bank account on your profile before requesting payout.',
       })
     }
 
@@ -683,12 +707,14 @@ async function getRestaurantPayoutAccount(restaurantId: string) {
   const [account] = await database
     .select({
       id: payoutAccounts.id,
+      bankName: payoutAccounts.bankCode,
       accountName: payoutAccounts.accountName,
       accountNumberLast4: payoutAccounts.accountNumberLast4,
       isVerified: payoutAccounts.isVerified,
     })
     .from(payoutAccounts)
     .where(eq(payoutAccounts.restaurantId, restaurantId))
+    .orderBy(desc(payoutAccounts.createdAt))
     .limit(1)
 
   return account ?? null

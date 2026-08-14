@@ -13,6 +13,7 @@ import {
 } from '../auth/index.js'
 import { buildWebUrl } from '../config/web-url.js'
 import { database } from '../db/client.js'
+import { saveUserPayoutAccount } from '../finance/payout-accounts.js'
 import { sendAgentCredentialsEmail } from '../email/agent-credentials.js'
 import {
   authSessions,
@@ -49,6 +50,12 @@ const loginBodySchema = z.object({
 
 const notificationParamsSchema = z.object({
   notificationId: z.uuid(),
+})
+
+const payoutAccountBodySchema = z.object({
+  bankName: z.string().trim().min(2).max(100),
+  accountName: z.string().trim().min(2).max(150),
+  accountNumber: z.string().trim().regex(/^\d{10}$/, 'Account number must be 10 digits.'),
 })
 
 export async function salesAgentRoutes(app: FastifyInstance) {
@@ -237,6 +244,23 @@ export async function salesAgentRoutes(app: FastifyInstance) {
     }
   })
 
+  app.put('/payout-account', async (request, reply) => {
+    const auth = await requireSalesAgent(request.headers.cookie, reply)
+    if (!auth) return
+    const body = payoutAccountBodySchema.safeParse(request.body)
+    if (!body.success) return reply.status(400).send({ error: 'validation_error', message: body.error.issues[0]?.message ?? 'Please check the bank details.' })
+
+    const account = await saveUserPayoutAccount(auth.userId, body.data)
+    return reply.status(200).send({
+      payoutAccount: {
+        bankName: account.bankCode,
+        accountName: account.accountName,
+        accountNumberLast4: account.accountNumberLast4,
+        isVerified: account.isVerified,
+      },
+    })
+  })
+
   app.post('/login', async (request, reply) => {
     const parsedBody = loginBodySchema.safeParse(request.body)
 
@@ -334,12 +358,14 @@ export async function salesAgentRoutes(app: FastifyInstance) {
 
       const [payoutAccount] = await database
         .select({
+          bankName: payoutAccounts.bankCode,
           accountName: payoutAccounts.accountName,
           accountNumberLast4: payoutAccounts.accountNumberLast4,
           isVerified: payoutAccounts.isVerified,
         })
         .from(payoutAccounts)
         .where(eq(payoutAccounts.userId, auth.userId))
+        .orderBy(desc(payoutAccounts.createdAt))
         .limit(1)
 
       return reply.status(200).send({
@@ -431,12 +457,13 @@ export async function salesAgentRoutes(app: FastifyInstance) {
       .select({ id: payoutAccounts.id })
       .from(payoutAccounts)
       .where(eq(payoutAccounts.userId, auth.userId))
+      .orderBy(desc(payoutAccounts.createdAt))
       .limit(1)
 
     if (!payoutAccount) {
       return reply.status(409).send({
         error: 'missing_payout_account',
-        message: 'Admin needs to add your payout account before you can request payout.',
+        message: 'Add your payout bank account on your profile before requesting payout.',
       })
     }
 

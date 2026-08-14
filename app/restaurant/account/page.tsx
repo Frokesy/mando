@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import ConfirmationModal from "@/components/ConfirmationModal";
+import PayoutAccountModal from "@/components/PayoutAccountModal";
 import RestaurantBottomNav from "@/components/RestaurantBottomNav";
 import { ArrowLeftIcon, MoneyIcon, DefaultUserIcon } from "@/components/svgs/DefaultIcons";
 import { useToastStore } from "@/store/toastStore";
@@ -23,6 +24,7 @@ type RestaurantAccountData = {
     serviceArea: { name: string; city: string; state: string };
   };
   payoutAccount: {
+    bankName?: string;
     accountName: string;
     accountNumberLast4: string;
     isVerified: boolean;
@@ -43,6 +45,7 @@ export default function RestaurantAccount() {
   const [loading, setLoading] = useState(true);
   const [requestingPayout, setRequestingPayout] = useState(false);
   const [showPayoutConfirmation, setShowPayoutConfirmation] = useState(false);
+  const [showPayoutAccount, setShowPayoutAccount] = useState(false);
 
   const loadAccount = useCallback(async () => {
     setLoading(true);
@@ -152,6 +155,9 @@ export default function RestaurantAccount() {
                 <InfoBlock label="Contact" value={restaurant?.phone ?? "Not set"} />
                 <InfoBlock label="Street address" value={restaurant?.streetAddress ?? "Not set"} />
               </div>
+              <button type="button" onClick={() => setShowPayoutAccount(true)} className="mt-5 w-full rounded-2xl border border-[#141B34] px-5 py-4 text-sm font-semibold text-[#141B34]">
+                {payoutAccount ? "Edit payout bank account" : "Add payout bank account"}
+              </button>
             </section>
 
             <section className="mb-6 rounded-[28px] border border-gray-200 bg-white p-5 shadow-sm">
@@ -215,6 +221,7 @@ export default function RestaurantAccount() {
         onClose={() => setShowPayoutConfirmation(false)}
         onConfirm={() => void requestPayout()}
       />
+      <PayoutAccountModal open={showPayoutAccount} endpoint={`${API_BASE_URL}/restaurant/payout-account`} account={payoutAccount ?? null} onClose={() => setShowPayoutAccount(false)} onSaved={loadAccount} />
     </motion.div>
   );
 }

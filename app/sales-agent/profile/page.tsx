@@ -4,8 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import Link from "next/link";
-import { FiSend } from "react-icons/fi";
+import { FiEdit3, FiSend } from "react-icons/fi";
 import ConfirmationModal from "@/components/ConfirmationModal";
+import PayoutAccountModal from "@/components/PayoutAccountModal";
 import SalesAgentBottomNav from "@/components/SalesAgentBottomNav";
 import { ArrowLeftIcon, DefaultUserIcon } from "@/components/svgs/DefaultIcons";
 import { useToastStore } from "@/store/toastStore";
@@ -29,6 +30,7 @@ type AgentProfile = {
     commissionRateBps: number;
   };
   payoutAccount: {
+    bankName?: string;
     accountName: string;
     accountNumberLast4: string;
     isVerified: boolean;
@@ -73,6 +75,7 @@ export default function SalesAgentProfile() {
   const [loading, setLoading] = useState(true);
   const [requestingPayout, setRequestingPayout] = useState(false);
   const [showPayoutConfirmation, setShowPayoutConfirmation] = useState(false);
+  const [showPayoutAccount, setShowPayoutAccount] = useState(false);
 
   const loadProfile = useCallback(async () => {
     setLoading(true);
@@ -195,15 +198,10 @@ export default function SalesAgentProfile() {
                   }
                 />
               </div>
-              <button
-                type="button"
-                disabled={requestingPayout}
-                onClick={() => setShowPayoutConfirmation(true)}
-                className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#141B34] px-5 py-4 text-sm font-semibold text-white disabled:opacity-60"
-              >
-                <FiSend className="h-4 w-4" />
-                {requestingPayout ? "Requesting..." : "Request payout"}
-              </button>
+              <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                <button type="button" onClick={() => setShowPayoutAccount(true)} className="inline-flex items-center justify-center gap-2 rounded-2xl border border-[#141B34] px-5 py-4 text-sm font-semibold text-[#141B34]"><FiEdit3 />{profile?.payoutAccount ? "Edit bank account" : "Add bank account"}</button>
+                <button type="button" disabled={requestingPayout} onClick={() => setShowPayoutConfirmation(true)} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#141B34] px-5 py-4 text-sm font-semibold text-white disabled:opacity-60"><FiSend className="h-4 w-4" />{requestingPayout ? "Requesting..." : "Request payout"}</button>
+              </div>
             </>
           )}
         </section>
@@ -303,6 +301,7 @@ export default function SalesAgentProfile() {
         onClose={() => setShowPayoutConfirmation(false)}
         onConfirm={() => void requestPayout()}
       />
+      <PayoutAccountModal open={showPayoutAccount} endpoint={`${API_BASE_URL}/sales-agent/payout-account`} account={profile?.payoutAccount ?? null} onClose={() => setShowPayoutAccount(false)} onSaved={loadProfile} />
     </motion.div>
   );
 }
