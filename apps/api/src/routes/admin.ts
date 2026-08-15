@@ -29,6 +29,7 @@ import {
   commissions,
   deliveries,
   menuItems,
+  notifications,
   orderIssues,
   orderItemComponents,
   orderItems,
