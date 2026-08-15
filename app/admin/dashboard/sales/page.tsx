@@ -278,6 +278,9 @@ export default function AdminSalesPage() {
           <Link href="/admin/dashboard/sales/settings" className="flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-[11px] font-semibold text-[#6A7282] shadow-sm">
             <FaSlidersH /> Settings
           </Link>
+          <Link href="/admin/dashboard/sales/withdrawals" className="flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-[11px] font-semibold text-[#6A7282] shadow-sm">
+            <FaWallet /> Withdrawals
+          </Link>
           <Button icon={<FaPlus />} onClick={() => setAgentModal("add")}>Add Agent</Button>
         </div>
       </div>

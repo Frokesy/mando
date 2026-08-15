@@ -1629,6 +1629,62 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.status(200).send(await selectAdminSalesAgents())
   })
 
+  app.get('/sales/withdrawals', async (_request, reply) => {
+    return reply.status(200).send(await selectAdminSalesWithdrawals())
+  })
+
+  app.patch('/sales/withdrawals/:requestId/status', async (request, reply) => {
+    const params = payoutRequestParamsSchema.safeParse(request.params)
+    const body = payoutStatusBodySchema.safeParse(request.body)
+    if (!params.success || !body.success) {
+      return reply.status(400).send({
+        error: 'validation_error',
+        message: 'Please choose a valid sales-agent withdrawal and status.',
+      })
+    }
+
+    const [updatedRequest] = await database
+      .update(payoutRequests)
+      .set({
+        status: body.data.status,
+        reviewedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(payoutRequests.id, params.data.requestId),
+          eq(payoutRequests.type, 'agent_commissions'),
+          inArray(payoutRequests.status, ['pending', 'under_review']),
+        ),
+      )
+      .returning({
+        id: payoutRequests.id,
+        userId: payoutRequests.userId,
+        status: payoutRequests.status,
+      })
+
+    if (!updatedRequest) {
+      return reply.status(404).send({
+        error: 'withdrawal_not_found',
+        message: 'Pending sales-agent withdrawal request not found.',
+      })
+    }
+
+    if (updatedRequest.userId) {
+      await database.insert(notifications).values({
+        userId: updatedRequest.userId,
+        type: 'agent_payout_reviewed',
+        title: body.data.status === 'approved' ? 'Payout approved' : 'Payout rejected',
+        body: body.data.status === 'approved'
+          ? 'Your commission payout request was approved for manual processing.'
+          : 'Your commission payout request was rejected. Contact Mando support if you need help.',
+        data: { payoutRequestId: updatedRequest.id, status: body.data.status },
+      })
+    }
+
+    return reply.status(200).send({ request: updatedRequest })
+  })
+
   app.patch('/sales/agents/pending/approve', async (request, reply) => {
     const pendingAgents = await database
       .select({
@@ -3120,6 +3176,65 @@ async function selectAdminSalesAgents() {
       totalCommission: agents.reduce((total, agent) => total + agent.commission, 0),
     },
     agents,
+  }
+}
+
+async function selectAdminSalesWithdrawals() {
+  const rows = await database
+    .select({
+      id: payoutRequests.id,
+      agentId: payoutRequests.userId,
+      agentName: profiles.fullName,
+      agentCode: salesAgentProfiles.agentCode,
+      tier: salesAgentProfiles.tier,
+      amount: payoutRequests.amount,
+      status: payoutRequests.status,
+      requestedAt: payoutRequests.requestedAt,
+      reviewedAt: payoutRequests.reviewedAt,
+      bankName: payoutAccounts.bankCode,
+      accountName: payoutAccounts.accountName,
+      accountNumberEncrypted: payoutAccounts.accountNumberEncrypted,
+      accountNumberLast4: payoutAccounts.accountNumberLast4,
+    })
+    .from(payoutRequests)
+    .innerJoin(users, eq(payoutRequests.userId, users.id))
+    .innerJoin(profiles, eq(users.id, profiles.userId))
+    .innerJoin(salesAgentProfiles, eq(users.id, salesAgentProfiles.userId))
+    .innerJoin(payoutAccounts, eq(payoutRequests.payoutAccountId, payoutAccounts.id))
+    .where(eq(payoutRequests.type, 'agent_commissions'))
+    .orderBy(desc(payoutRequests.requestedAt))
+
+  const withdrawals = rows.map((row) => ({
+    id: row.id,
+    agentId: row.agentId,
+    agent: row.agentName,
+    agentCode: row.agentCode,
+    tier: row.tier,
+    amount: row.amount,
+    status: row.status,
+    requestDate: row.requestedAt,
+    reviewedAt: row.reviewedAt,
+    bankName: row.bankName,
+    accountName: row.accountName,
+    accountNumber:
+      decryptPayoutAccountNumber(row.accountNumberEncrypted) ??
+      `****${row.accountNumberLast4}`,
+  }))
+
+  return {
+    stats: {
+      totalRequests: withdrawals.length,
+      pendingRequests: withdrawals.filter((request) =>
+        ['pending', 'under_review'].includes(request.status),
+      ).length,
+      pendingAmount: withdrawals
+        .filter((request) => ['pending', 'under_review'].includes(request.status))
+        .reduce((total, request) => total + request.amount, 0),
+      approvedAmount: withdrawals
+        .filter((request) => ['approved', 'processing', 'paid'].includes(request.status))
+        .reduce((total, request) => total + request.amount, 0),
+    },
+    withdrawals,
   }
 }
 
