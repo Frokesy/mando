@@ -9,6 +9,20 @@ type AgentCredentialsEmail = {
   password: string
 }
 
+type RiderCredentialsEmail = {
+  email: string
+  fullName: string
+  riderCode: string
+  password: string | null
+}
+
+type RestaurantCredentialsEmail = {
+  email: string
+  fullName: string
+  restaurantName: string
+  password: string | null
+}
+
 let transporter: ReturnType<typeof nodemailer.createTransport> | null = null
 
 export async function sendAgentCredentialsEmail(input: AgentCredentialsEmail) {
@@ -62,6 +76,117 @@ export async function sendAgentCredentialsEmail(input: AgentCredentialsEmail) {
 
   if (!result.messageId) throw new Error('SMTP provider accepted the request without a message ID.')
   return { provider: 'smtp' as const, messageId: result.messageId }
+}
+
+export async function sendRiderCredentialsEmail(input: RiderCredentialsEmail) {
+  const loginUrl = buildWebUrl('/rider/login')
+  const passwordLine = input.password
+    ? `Temporary password: ${input.password}`
+    : 'Password: Use the password already attached to your Mando account.'
+  return sendCredentialMessage({
+    email: input.email,
+    subject: 'Your Mando rider login details',
+    idempotencyKey: `rider-credentials/${input.riderCode}`,
+    text: [
+      `Hello ${input.fullName},`, '',
+      'Your Mando rider account has been created.',
+      `Rider code: ${input.riderCode}`,
+      passwordLine,
+      `Login: ${loginUrl}`, '',
+      'Keep these details private.',
+    ].join('\n'),
+    html: credentialHtml({
+      fullName: input.fullName,
+      intro: 'Your Mando rider account has been created. Use these details to sign in:',
+      details: [
+        ['Rider code', input.riderCode],
+        ['Password', input.password ?? 'Use your existing Mando password'],
+      ],
+      loginUrl,
+    }),
+  })
+}
+
+export async function sendRestaurantCredentialsEmail(input: RestaurantCredentialsEmail) {
+  const loginUrl = buildWebUrl('/restaurant/login')
+  const passwordLine = input.password
+    ? `Temporary password: ${input.password}`
+    : 'Password: Use the password already attached to your Mando account.'
+  return sendCredentialMessage({
+    email: input.email,
+    subject: 'Your Mando restaurant login details',
+    idempotencyKey: `restaurant-credentials/${input.restaurantName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+    text: [
+      `Hello ${input.fullName},`, '',
+      `Your Mando restaurant account for ${input.restaurantName} has been created.`,
+      `Email: ${input.email}`,
+      passwordLine,
+      `Login: ${loginUrl}`, '',
+      'Keep these details private.',
+    ].join('\n'),
+    html: credentialHtml({
+      fullName: input.fullName,
+      intro: `Your Mando restaurant account for ${input.restaurantName} has been created. Use these details to sign in:`,
+      details: [
+        ['Email', input.email],
+        ['Password', input.password ?? 'Use your existing Mando password'],
+      ],
+      loginUrl,
+    }),
+  })
+}
+
+async function sendCredentialMessage(input: {
+  email: string
+  subject: string
+  idempotencyKey: string
+  text: string
+  html: string
+}) {
+  const config = getEmailConfig()
+  if (config.host === 'smtp.resend.com') {
+    const messageId = await sendWithResendApi({
+      apiKey: config.password,
+      from: config.from,
+      to: input.email,
+      subject: input.subject,
+      text: input.text,
+      html: input.html,
+      idempotencyKey: input.idempotencyKey,
+    })
+    return { provider: 'resend' as const, messageId }
+  }
+
+  const result = await getTransporter(config).sendMail({
+    from: config.from,
+    to: input.email,
+    subject: input.subject,
+    text: input.text,
+    html: input.html,
+  })
+  if (!result.messageId) throw new Error('SMTP provider accepted the request without a message ID.')
+  return { provider: 'smtp' as const, messageId: result.messageId }
+}
+
+function credentialHtml(input: {
+  fullName: string
+  intro: string
+  details: [string, string][]
+  loginUrl: string
+}) {
+  const details = input.details
+    .map(([label, value]) => `<p style="margin:0 0 8px"><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</p>`)
+    .join('')
+  return `
+    <div style="font-family:Arial,sans-serif;line-height:1.6;color:#141b34;max-width:560px;margin:auto">
+      <h1 style="font-size:24px">Welcome to Mando</h1>
+      <p>Hello ${escapeHtml(input.fullName)},</p>
+      <p>${escapeHtml(input.intro)}</p>
+      <div style="background:#f8f8f8;border:1px solid #e9eaeb;border-radius:12px;padding:16px">${details}</div>
+      <p><a href="${escapeHtml(input.loginUrl)}" style="display:inline-block;background:#dfb400;color:#141b34;text-decoration:none;font-weight:bold;padding:12px 20px;border-radius:10px">Sign in to Mando</a></p>
+      <p style="color:#6b6b6b">Keep these details private.</p>
+    </div>
+  `
 }
 
 async function sendWithResendApi(input: {

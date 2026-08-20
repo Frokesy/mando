@@ -17,7 +17,11 @@ import {
   decryptPayoutAccountNumber,
   encryptPayoutAccountNumber,
 } from '../finance/payout-accounts.js'
-import { sendAgentCredentialsEmail } from '../email/agent-credentials.js'
+import {
+  sendAgentCredentialsEmail,
+  sendRestaurantCredentialsEmail,
+  sendRiderCredentialsEmail,
+} from '../email/agent-credentials.js'
 import {
   adminPayoutSettings,
   adminSettings,
@@ -784,8 +788,22 @@ export async function adminRoutes(app: FastifyInstance) {
     }
 
     try {
-      const rider = await createAdminRider(parsedBody.data)
-      return reply.status(201).send({ rider })
+      const result = await createAdminRider(parsedBody.data)
+      let credentialEmail = { sent: false, messageId: null as string | null }
+      try {
+        const delivery = await sendRiderCredentialsEmail(result.credentials)
+        credentialEmail = { sent: true, messageId: delivery.messageId }
+        request.log.info(
+          { riderId: result.rider?.id, emailProvider: delivery.provider, emailMessageId: delivery.messageId },
+          'Rider credentials email accepted by provider',
+        )
+      } catch (emailError) {
+        request.log.error(
+          { err: emailError, riderId: result.rider?.id, email: result.credentials.email },
+          'Rider was created but credentials email failed',
+        )
+      }
+      return reply.status(201).send({ rider: result.rider, credentialEmail })
     } catch (error) {
       request.log.error(error)
 
@@ -988,8 +1006,22 @@ export async function adminRoutes(app: FastifyInstance) {
     }
 
     try {
-      const vendor = await createAdminVendor(parsedBody.data)
-      return reply.status(201).send({ vendor })
+      const result = await createAdminVendor(parsedBody.data)
+      let credentialEmail = { sent: false, messageId: null as string | null }
+      try {
+        const delivery = await sendRestaurantCredentialsEmail(result.credentials)
+        credentialEmail = { sent: true, messageId: delivery.messageId }
+        request.log.info(
+          { restaurantId: result.vendor?.id, emailProvider: delivery.provider, emailMessageId: delivery.messageId },
+          'Restaurant credentials email accepted by provider',
+        )
+      } catch (emailError) {
+        request.log.error(
+          { err: emailError, restaurantId: result.vendor?.id, email: result.credentials.email },
+          'Restaurant was created but credentials email failed',
+        )
+      }
+      return reply.status(201).send({ vendor: result.vendor, credentialEmail })
     } catch (error) {
       request.log.error(error)
 
@@ -2279,11 +2311,13 @@ async function selectAdminVendorCommissions() {
 async function createAdminVendor(input: z.infer<typeof vendorBodySchema>) {
   const serviceArea = await ensureServiceArea(input.serviceArea)
   const slug = await createUniqueRestaurantSlug(input.restaurantName)
+  const temporaryPassword = createTemporaryPassword()
   const user = await getOrCreateUserForRole({
     email: input.email,
     fullName: input.ownerName,
     phone: input.phone,
     role: 'restaurant',
+    password: temporaryPassword,
   })
 
   const [restaurant] = await database
@@ -2313,7 +2347,15 @@ async function createAdminVendor(input: z.infer<typeof vendorBodySchema>) {
   await upsertRestaurantOperations(restaurant.id, input)
   await upsertVendorDocuments(restaurant.id, input)
 
-  return selectAdminVendorDetail(restaurant.id)
+  return {
+    vendor: await selectAdminVendorDetail(restaurant.id),
+    credentials: {
+      email: user.email,
+      fullName: input.ownerName,
+      restaurantName: input.restaurantName,
+      password: user.isNew ? temporaryPassword : null,
+    },
+  }
 }
 
 async function syncVendorManagerMembership(
@@ -3675,11 +3717,13 @@ async function createAdminRider(input: z.infer<typeof riderBodySchema>) {
   const serviceArea = areaRows[0]
   const riderCode = await createUniqueRiderCode(input.fullName)
   const accountNumberLast4 = input.accountNumber.slice(-4)
+  const temporaryPassword = createTemporaryPassword()
   const user = await getOrCreateUserForRole({
     email: input.email,
     fullName: input.fullName,
     phone: input.phone,
     role: 'rider',
+    password: temporaryPassword,
   })
 
   await database.insert(riderProfiles).values({
@@ -3719,7 +3763,15 @@ async function createAdminRider(input: z.infer<typeof riderBodySchema>) {
     isVerified: true,
   })
 
-  return selectAdminRiderDetail(user.id)
+  return {
+    rider: await selectAdminRiderDetail(user.id),
+    credentials: {
+      email: user.email,
+      fullName: input.fullName,
+      riderCode,
+      password: user.isNew ? temporaryPassword : null,
+    },
+  }
 }
 
 async function createUniqueRiderCode(name: string) {
@@ -3947,7 +3999,7 @@ async function getOrCreateUserForRole(input: {
     })
     .onConflictDoNothing()
 
-  return user
+  return { ...user, isNew: !existingUser }
 }
 
 function buildVendorStats(vendorRows: Awaited<ReturnType<typeof selectAdminVendors>>) {

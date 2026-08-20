@@ -353,10 +353,15 @@ export default function AdminRidersPage() {
         <AddRiderModal
           serviceAreas={serviceAreaNames}
           onClose={() => setShowAddModal(false)}
-          onSaved={async () => {
+          onSaved={async (emailSent) => {
             setShowAddModal(false);
             await loadRiders();
-            showToast("Rider added successfully", "success");
+            showToast(
+              emailSent
+                ? "Rider added and login details emailed successfully"
+                : "Rider added, but the login email could not be sent. Check the API email configuration.",
+              emailSent ? "success" : "error",
+            );
           }}
         />
       ) : null}
@@ -373,7 +378,7 @@ export default function AdminRidersPage() {
   );
 }
 
-function AddRiderModal({ serviceAreas, onClose, onSaved }: { serviceAreas: string[]; onClose: () => void; onSaved: () => void }) {
+function AddRiderModal({ serviceAreas, onClose, onSaved }: { serviceAreas: string[]; onClose: () => void; onSaved: (emailSent: boolean) => void }) {
   const showToast = useToastStore((s) => s.showToast);
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
@@ -428,9 +433,9 @@ function AddRiderModal({ serviceAreas, onClose, onSaved }: { serviceAreas: strin
         credentials: "include",
         body: JSON.stringify(body),
       });
-      const payload = await response.json().catch(() => null) as { message?: string } | null;
+      const payload = await response.json().catch(() => null) as { message?: string; credentialEmail?: { sent: boolean } } | null;
       if (!response.ok) throw new Error(payload?.message ?? "Unable to add rider");
-      onSaved();
+      onSaved(payload?.credentialEmail?.sent === true);
     } catch (error) {
       showToast(error instanceof Error ? error.message : "Unable to add rider", "error");
     } finally {

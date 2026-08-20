@@ -509,11 +509,20 @@ const AdminVendorsPage = () => {
           mode={vendorModalMode}
           vendor={vendorModalMode === "edit" ? selectedVendor : null}
           onClose={() => setVendorModalMode(null)}
-          onSaved={(vendor) => {
+          onSaved={(vendor, emailSent) => {
             setVendorModalMode(null);
             void loadVendors();
             if (vendor) setSelectedVendor(vendor);
-            showToast(vendorModalMode === "edit" ? "Vendor updated successfully" : "Vendor added successfully", "success");
+            if (vendorModalMode === "edit") {
+              showToast("Vendor updated successfully", "success");
+            } else {
+              showToast(
+                emailSent
+                  ? "Vendor added and login details emailed successfully"
+                  : "Vendor added, but the login email could not be sent. Check the API email configuration.",
+                emailSent ? "success" : "error",
+              );
+            }
           }}
           showToast={showToast}
         />
@@ -1135,7 +1144,7 @@ function VendorFormModal({
   vendor: AdminVendor | null;
   showToast: (message: string, type?: "success" | "error" | "info") => void;
   onClose: () => void;
-  onSaved: (vendor: AdminVendor | null) => void;
+  onSaved: (vendor: AdminVendor | null, emailSent?: boolean) => void;
 }) {
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
@@ -1252,8 +1261,11 @@ function VendorFormModal({
         throw new Error(errorBody?.message ?? "Unable to save vendor");
       }
 
-      const result = (await response.json()) as { vendor: AdminVendor | null };
-      onSaved(result.vendor);
+      const result = (await response.json()) as {
+        vendor: AdminVendor | null;
+        credentialEmail?: { sent: boolean };
+      };
+      onSaved(result.vendor, mode === "add" ? result.credentialEmail?.sent === true : undefined);
     } catch (error) {
       showToast(error instanceof Error ? error.message : "Unable to save vendor", "error");
     } finally {
@@ -1594,5 +1606,4 @@ function formatDate(value: string) {
 }
 
 export default AdminVendorsPage;
-
 
