@@ -115,6 +115,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
 
         await tx.insert(authSessions).values({
           userId: restaurantUser.id,
+          activeRole: 'restaurant',
           tokenHash: session.tokenHash,
           expiresAt: session.expiresAt,
         })
@@ -473,7 +474,7 @@ async function requireRestaurant(cookieHeader: string | undefined, reply: Fastif
     return null
   }
 
-  if (!sessionContext.authPayload.roles.includes('restaurant')) {
+  if (sessionContext.activeRole !== 'restaurant') {
     reply.status(403).send({
       error: 'forbidden',
       message: 'This route is only available to restaurant users.',

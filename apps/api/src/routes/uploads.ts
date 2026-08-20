@@ -43,7 +43,7 @@ export async function uploadRoutes(app: FastifyInstance) {
 
     const type = parsedBody.data.type
 
-    if (!canCreateUpload(type, sessionContext.authPayload.roles)) {
+    if (!canCreateUpload(type, sessionContext.activeRole)) {
       return reply.status(403).send({
         error: 'upload_not_allowed',
         message: 'You are not allowed to upload this image.',
@@ -65,10 +65,10 @@ export async function uploadRoutes(app: FastifyInstance) {
   })
 }
 
-function canCreateUpload(type: CloudinaryUploadType, roles: string[]) {
-  if (type === 'customer_avatar') return true
+function canCreateUpload(type: CloudinaryUploadType, activeRole: string) {
+  if (type === 'customer_avatar') return activeRole === 'customer'
 
-  return roles.includes('admin')
+  return activeRole === 'admin'
 }
 
 function sendUnauthenticated(reply: FastifyReply) {

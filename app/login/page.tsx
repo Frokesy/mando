@@ -35,6 +35,34 @@ export default function Login() {
   const [forgotPasswordMode, setForgotPasswordMode] = useState(false);
   const [roleOptions, setRoleOptions] = useState<string[]>([]);
 
+  const openRoleDashboard = async (role: string) => {
+    setLoading(true);
+    setError("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/select-role`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ role }),
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(result?.message ?? "Unable to open this dashboard.");
+      }
+
+      const freshAuth = await fetchCurrentUser(role);
+      if (!freshAuth) throw new Error("The selected role session could not be confirmed.");
+      setRoleOptions([]);
+      router.push(roleDestinations[role]?.href ?? "/customer/dashboard");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unable to switch account role.";
+      setError(message);
+      showToast(message, "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const setFieldError = (field: string, msg: string) => {
     setFieldErrors((prev) => ({ ...prev, [field]: msg }));
     window.setTimeout(() => {
@@ -272,7 +300,8 @@ export default function Login() {
                     <button
                       key={role}
                       type="button"
-                      onClick={() => router.push(option.href)}
+                      onClick={() => void openRoleDashboard(role)}
+                      disabled={loading}
                       className="flex items-center justify-between rounded-2xl border border-gray-200 bg-[#FAFAFA] px-4 py-3 text-left text-sm font-semibold text-[#141B34] hover:border-[#DFB400] hover:bg-[#FFF9DA]"
                     >
                       <span>{option.label}</span>

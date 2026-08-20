@@ -366,10 +366,15 @@ export async function adminRoutes(app: FastifyInstance) {
       })
       .from(users)
       .innerJoin(userRoles, eq(users.id, userRoles.userId))
-      .where(eq(users.email, parsedBody.data.email))
+      .where(
+        and(
+          eq(users.email, parsedBody.data.email),
+          eq(userRoles.role, 'admin'),
+        ),
+      )
       .limit(1)
 
-    if (!adminUser || adminUser.role !== 'admin') return sendInvalidAdminLogin(reply)
+    if (!adminUser) return sendInvalidAdminLogin(reply)
 
     const passwordMatches = await verifyPassword(
       parsedBody.data.password,
@@ -397,6 +402,7 @@ export async function adminRoutes(app: FastifyInstance) {
 
       await tx.insert(authSessions).values({
         userId: adminUser.userId,
+        activeRole: 'admin',
         tokenHash: session.tokenHash,
         expiresAt: session.expiresAt,
       })
@@ -832,23 +838,23 @@ export async function adminRoutes(app: FastifyInstance) {
       })
     }
 
-    const [user] = await database
-      .update(users)
+    const [riderProfile] = await database
+      .update(riderProfiles)
       .set({
-        status: parsedBody.data.status === 'suspended' ? 'suspended' : 'active',
+        availabilityStatus: parsedBody.data.status === 'suspended' ? 'suspended' : 'offline',
         updatedAt: new Date(),
       })
-      .where(eq(users.id, parsedParams.data.riderId))
-      .returning({ id: users.id })
+      .where(eq(riderProfiles.userId, parsedParams.data.riderId))
+      .returning({ id: riderProfiles.userId })
 
-    if (!user) {
+    if (!riderProfile) {
       return reply.status(404).send({
         error: 'rider_not_found',
         message: 'Rider not found.',
       })
     }
 
-    const rider = await selectAdminRiderDetail(user.id)
+    const rider = await selectAdminRiderDetail(riderProfile.id)
     return reply.status(200).send({ rider })
   })
 
@@ -1738,13 +1744,9 @@ export async function adminRoutes(app: FastifyInstance) {
     const approvedAgents = await database.transaction(async (tx) => {
       return Promise.all(
         pendingAgents.map(async (agent) => {
-          const temporaryPassword = createTemporaryPassword()
-          const passwordHash = await hashPassword(temporaryPassword)
-
           await tx
             .update(users)
             .set({
-              passwordHash,
               status: 'active',
               updatedAt: new Date(),
             })
@@ -1760,7 +1762,6 @@ export async function adminRoutes(app: FastifyInstance) {
 
           return {
             ...agent,
-            temporaryPassword,
             fullName: agent.fullName ?? agent.email,
             agentCode: agent.agentCode ?? '',
           }
@@ -1775,7 +1776,7 @@ export async function adminRoutes(app: FastifyInstance) {
             email: agent.email,
             fullName: agent.fullName,
             agentCode: agent.agentCode,
-            password: agent.temporaryPassword,
+            password: null,
           })
 
           request.log.info(
@@ -1820,7 +1821,8 @@ export async function adminRoutes(app: FastifyInstance) {
 
     try {
       const temporaryPassword = createTemporaryPassword()
-      const agent = await createAdminSalesAgent(parsedBody.data, temporaryPassword)
+      const result = await createAdminSalesAgent(parsedBody.data, temporaryPassword)
+      const agent = result.agent
       if (!agent) throw new Error('Sales agent creation could not be confirmed.')
       let credentialsEmailSent = true
       let credentialsEmailId: string | null = null
@@ -1831,7 +1833,7 @@ export async function adminRoutes(app: FastifyInstance) {
           email: parsedBody.data.email,
           fullName: agent.name,
           agentCode: agent.agentCode,
-          password: temporaryPassword,
+          password: result.credentials.password,
         })
         credentialsEmailId = delivery.messageId
         request.log.info(
@@ -1849,10 +1851,10 @@ export async function adminRoutes(app: FastifyInstance) {
 
       return reply.status(201).send({ agent, credentialsEmailSent, credentialsEmailId, credentialsEmailError })
     } catch (error) {
-      if (error instanceof ExistingAdminCreatedUserError || isUniqueViolation(error)) {
+      if (isUniqueViolation(error)) {
         return reply.status(409).send({
-          error: 'agent_email_exists',
-          message: 'A user with this email already exists. Use a different email or edit the existing account.',
+          error: 'agent_role_exists',
+          message: 'This user already has a sales-agent account or the selected agent code is unavailable.',
         })
       }
       throw error
@@ -1924,9 +1926,9 @@ export async function adminRoutes(app: FastifyInstance) {
     }
 
     await database
-      .update(users)
-      .set({ status: 'disabled', updatedAt: new Date() })
-      .where(eq(users.id, parsedParams.data.agentId))
+      .update(salesAgentProfiles)
+      .set({ status: 'suspended', updatedAt: new Date() })
+      .where(eq(salesAgentProfiles.userId, parsedParams.data.agentId))
 
     return reply.status(200).send({ ok: true })
   })
@@ -2029,7 +2031,7 @@ async function requireAdmin(cookieHeader: string | undefined, reply: FastifyRepl
     return null
   }
 
-  if (!sessionContext.authPayload.roles.includes('admin')) {
+  if (sessionContext.activeRole !== 'admin') {
     reply.status(403).send({
       error: 'forbidden',
       message: 'This route is only available to admins.',
@@ -3296,7 +3298,6 @@ async function createAdminSalesAgent(input: z.infer<typeof salesAgentBodySchema>
     phone: input.phone,
     role: 'sales_agent',
     password: temporaryPassword,
-    requireNewUser: true,
   })
 
   await database.insert(salesAgentProfiles).values({
@@ -3319,19 +3320,23 @@ async function createAdminSalesAgent(input: z.infer<typeof salesAgentBodySchema>
     })
   }
 
-  return selectAdminSalesAgentDetail(user.id)
+  return {
+    agent: await selectAdminSalesAgentDetail(user.id),
+    credentials: {
+      password: user.isNew ? temporaryPassword : null,
+    },
+  }
 }
 
 async function updateAdminSalesAgent(
   agentId: string,
   input: z.infer<typeof salesAgentUpdateBodySchema>,
 ) {
-  if (input.email || input.status) {
+  if (input.email) {
     await database
       .update(users)
       .set({
         email: input.email,
-        status: input.status,
         updatedAt: new Date(),
       })
       .where(eq(users.id, agentId))
@@ -3942,15 +3947,12 @@ function createTemporaryPassword() {
   return `M${randomBytes(9).toString('base64url')}7!`
 }
 
-class ExistingAdminCreatedUserError extends Error {}
-
 async function getOrCreateUserForRole(input: {
   email: string
   fullName: string
   phone?: string | null
   role: 'customer' | 'restaurant' | 'rider' | 'sales_agent' | 'admin'
   password?: string
-  requireNewUser?: boolean
 }) {
   const normalizedEmail = input.email.trim().toLowerCase()
   const [existingUser] = await database
@@ -3958,8 +3960,6 @@ async function getOrCreateUserForRole(input: {
     .from(users)
     .where(sql`lower(${users.email}) = ${normalizedEmail}`)
     .limit(1)
-
-  if (existingUser && input.requireNewUser) throw new ExistingAdminCreatedUserError()
 
   const user = existingUser ?? (
     await database
@@ -4128,6 +4128,7 @@ function mapRiderStatus(
   availabilityStatus: (typeof riderProfiles.$inferSelect)['availabilityStatus'],
 ) {
   if (userStatus === 'suspended' || userStatus === 'disabled') return 'suspended'
+  if (availabilityStatus === 'suspended') return 'suspended'
   if (availabilityStatus === 'busy') return 'on delivery'
   if (availabilityStatus === 'available') return 'active'
   return 'offline'

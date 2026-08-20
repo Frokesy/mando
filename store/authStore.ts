@@ -21,6 +21,7 @@ export type AuthPayload = {
   user: AuthUser;
   profile: AuthProfile;
   roles: string[];
+  activeRole: string;
 };
 
 type AuthState = {
@@ -59,7 +60,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
         if (response.ok) {
           const auth = (await response.json()) as AuthPayload;
-          if (requiredRole && !auth.roles.includes(requiredRole)) {
+          if (requiredRole && auth.activeRole !== requiredRole) {
             set({ auth: null });
             return null;
           }

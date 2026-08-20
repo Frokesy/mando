@@ -147,7 +147,7 @@ function getCatalogSearchQuery(query: unknown) {
 async function getCustomerServiceAreaId(cookieHeader: string | undefined) {
   const sessionContext = await getCurrentSessionContext(cookieHeader)
 
-  if (!sessionContext) return null
+  if (!sessionContext || sessionContext.activeRole !== 'customer') return null
 
   const [defaultAddress] = await database
     .select({
@@ -408,5 +408,4 @@ function serializeComboSummary(
     },
   }
 }
-
 

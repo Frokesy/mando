@@ -1345,6 +1345,7 @@ export const authSessions = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
+    activeRole: userRoleEnum('active_role').notNull(),
     tokenHash: text('token_hash').notNull(),
     expiresAt: timestampWithTimezone('expires_at').notNull(),
     revokedAt: timestampWithTimezone('revoked_at'),

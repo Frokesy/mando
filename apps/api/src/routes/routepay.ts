@@ -49,7 +49,7 @@ async function initiateHostedCheckout(
 ) {
     const sessionContext = await getCurrentSessionContext(request.headers.cookie)
 
-    if (!sessionContext) {
+    if (!sessionContext || sessionContext.activeRole !== 'customer') {
       return sendUnauthenticated(reply)
     }
 
@@ -148,7 +148,7 @@ async function verifyCheckoutManually(
 ) {
   const sessionContext = await getCurrentSessionContext(request.headers.cookie)
 
-  if (!sessionContext) {
+  if (!sessionContext || sessionContext.activeRole !== 'customer') {
     return sendUnauthenticated(reply)
   }
 

@@ -21,6 +21,7 @@ export async function getCurrentSessionContext(cookieHeader: string | undefined)
   const [sessionUser] = await database
     .select({
       sessionId: authSessions.id,
+      activeRole: authSessions.activeRole,
       revokedAt: authSessions.revokedAt,
       expiresAt: authSessions.expiresAt,
       userId: users.id,
@@ -77,6 +78,7 @@ export async function getCurrentSessionContext(cookieHeader: string | undefined)
   return {
     sessionId: sessionUser.sessionId,
     userId: sessionUser.userId,
+    activeRole: sessionUser.activeRole,
     authPayload: {
       user: {
         id: sessionUser.userId,
@@ -86,6 +88,7 @@ export async function getCurrentSessionContext(cookieHeader: string | undefined)
       },
       profile,
       roles: roles.map((userRole) => userRole.role),
+      activeRole: sessionUser.activeRole,
     },
   }
 }

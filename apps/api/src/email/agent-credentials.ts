@@ -6,7 +6,7 @@ type AgentCredentialsEmail = {
   email: string
   fullName: string
   agentCode: string
-  password: string
+  password: string | null
 }
 
 type RiderCredentialsEmail = {
@@ -34,7 +34,9 @@ export async function sendAgentCredentialsEmail(input: AgentCredentialsEmail) {
     '',
     'Your Mando sales agent account has been created.',
     `Agent code: ${input.agentCode}`,
-    `Password: ${input.password}`,
+    input.password
+      ? `Temporary password: ${input.password}`
+      : 'Password: Use the password already attached to your Mando account.',
     `Login: ${loginUrl}`,
     '',
     'Keep these details private. You can use them to sign in to your sales agent dashboard.',
@@ -46,7 +48,7 @@ export async function sendAgentCredentialsEmail(input: AgentCredentialsEmail) {
       <p>Your Mando sales agent account has been created. Use these details to sign in:</p>
       <div style="background:#f8f8f8;border:1px solid #e9eaeb;border-radius:12px;padding:16px">
         <p style="margin:0 0 8px"><strong>Agent code:</strong> ${escapeHtml(input.agentCode)}</p>
-        <p style="margin:0"><strong>Password:</strong> ${escapeHtml(input.password)}</p>
+        <p style="margin:0"><strong>Password:</strong> ${escapeHtml(input.password ?? 'Use your existing Mando password')}</p>
       </div>
       <p><a href="${escapeHtml(loginUrl)}" style="display:inline-block;background:#dfb400;color:#141b34;text-decoration:none;font-weight:bold;padding:12px 20px;border-radius:10px">Sign in to Mando</a></p>
       <p style="color:#6b6b6b">Keep these details private.</p>

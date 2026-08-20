@@ -43,6 +43,10 @@ const loginBodySchema = z.object({
   password: z.string().min(1),
 })
 
+const selectRoleBodySchema = z.object({
+  role: z.enum(['customer', 'rider', 'sales_agent', 'restaurant', 'admin']),
+})
+
 export async function authRoutes(app: FastifyInstance) {
   app.post('/signup', async (request, reply) => {
     const parsedBody = signupBodySchema.safeParse(request.body)
@@ -143,6 +147,7 @@ export async function authRoutes(app: FastifyInstance) {
 
         await tx.insert(authSessions).values({
           userId: createdUser.id,
+          activeRole: 'customer',
           tokenHash: session.tokenHash,
           expiresAt: session.expiresAt,
         })
@@ -261,8 +266,20 @@ export async function authRoutes(app: FastifyInstance) {
           .set({ revokedAt: new Date() })
           .where(eq(authSessions.userId, existingUser.id))
 
+        const assignedRoles = await tx
+          .select({ role: userRoles.role })
+          .from(userRoles)
+          .where(eq(userRoles.userId, existingUser.id))
+
+        const activeRole = assignedRoles.some(({ role }) => role === 'customer')
+          ? 'customer'
+          : assignedRoles[0]?.role
+
+        if (!activeRole) throw new Error('User has no assigned role.')
+
         await tx.insert(authSessions).values({
           userId: existingUser.id,
+          activeRole,
           tokenHash: session.tokenHash,
           expiresAt: session.expiresAt,
         })
@@ -282,13 +299,6 @@ export async function authRoutes(app: FastifyInstance) {
           .where(eq(profiles.userId, existingUser.id))
           .limit(1)
 
-        const roles = await tx
-          .select({
-            role: userRoles.role,
-          })
-          .from(userRoles)
-          .where(eq(userRoles.userId, existingUser.id))
-
         return {
           user: {
             id: existingUser.id,
@@ -297,7 +307,8 @@ export async function authRoutes(app: FastifyInstance) {
             createdAt: existingUser.createdAt,
           },
           profile,
-          roles: roles.map((userRole) => userRole.role),
+          roles: assignedRoles.map((userRole) => userRole.role),
+          activeRole,
         }
       })
 
@@ -342,6 +353,33 @@ export async function authRoutes(app: FastifyInstance) {
         message: 'Unable to load the current user.',
       })
     }
+  })
+
+  app.post('/select-role', async (request, reply) => {
+    const parsedBody = selectRoleBodySchema.safeParse(request.body)
+    if (!parsedBody.success) {
+      return reply.status(400).send({
+        error: 'validation_error',
+        message: 'Select a valid account role.',
+      })
+    }
+
+    const sessionContext = await getCurrentSessionContext(request.headers.cookie)
+    if (!sessionContext) return sendUnauthenticated(reply)
+
+    if (!sessionContext.authPayload.roles.includes(parsedBody.data.role)) {
+      return reply.status(403).send({
+        error: 'forbidden',
+        message: 'This role is not assigned to your account.',
+      })
+    }
+
+    await database
+      .update(authSessions)
+      .set({ activeRole: parsedBody.data.role })
+      .where(eq(authSessions.id, sessionContext.sessionId))
+
+    return reply.status(200).send({ activeRole: parsedBody.data.role })
   })
 
   app.post('/logout', async (request, reply) => {

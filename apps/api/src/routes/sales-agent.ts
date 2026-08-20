@@ -161,7 +161,7 @@ export async function salesAgentRoutes(app: FastifyInstance) {
           agentCode,
           referralCode: newReferralCode,
           uplineSalesAgentId: upline.userId,
-          status: 'active',
+          status: 'pending',
           tier: 'standard',
         })
 
@@ -318,6 +318,7 @@ export async function salesAgentRoutes(app: FastifyInstance) {
 
         await tx.insert(authSessions).values({
           userId: agentUser.userId,
+          activeRole: 'sales_agent',
           tokenHash: session.tokenHash,
           expiresAt: session.expiresAt,
         })
@@ -564,11 +565,21 @@ async function requireSalesAgent(
     return null
   }
 
-  if (!sessionContext.authPayload.roles.includes('sales_agent')) {
+  if (sessionContext.activeRole !== 'sales_agent') {
     reply.status(403).send({
       error: 'forbidden',
       message: 'This route is only available to sales agents.',
     })
+    return null
+  }
+
+  const [agent] = await database
+    .select({ status: salesAgentProfiles.status })
+    .from(salesAgentProfiles)
+    .where(eq(salesAgentProfiles.userId, sessionContext.userId))
+    .limit(1)
+  if (!agent || agent.status !== 'active') {
+    reply.status(403).send({ error: 'forbidden', message: 'This sales-agent account is not active.' })
     return null
   }
 

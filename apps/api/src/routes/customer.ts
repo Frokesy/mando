@@ -175,7 +175,7 @@ export async function customerRoutes(app: FastifyInstance) {
 
   app.get('/checkout-settings', async (request, reply) => {
     const sessionContext = await getCurrentSessionContext(request.headers.cookie)
-    const defaultAddress = sessionContext
+    const defaultAddress = sessionContext?.activeRole === 'customer'
       ? await getDefaultUserAddressDetails(sessionContext.userId)
       : null
 
@@ -1737,7 +1737,7 @@ async function requireCustomer(cookieHeader: string | undefined, reply: FastifyR
     return null
   }
 
-  if (!sessionContext.authPayload.roles.includes('customer')) {
+  if (sessionContext.activeRole !== 'customer') {
     reply
       .status(403)
       .header('Set-Cookie', serializeClearSessionCookie())
@@ -1923,5 +1923,3 @@ function isValidBirthdayInput(value: string) {
     parsedDate.getUTCDate() === day
   )
 }
-
-

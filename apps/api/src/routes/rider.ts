@@ -103,6 +103,7 @@ export async function riderRoutes(app: FastifyInstance) {
           createdAt: users.createdAt,
           passwordHash: users.passwordHash,
           riderCode: riderProfiles.riderCode,
+          availabilityStatus: riderProfiles.availabilityStatus,
         })
         .from(riderProfiles)
         .innerJoin(users, eq(riderProfiles.userId, users.id))
@@ -118,7 +119,11 @@ export async function riderRoutes(app: FastifyInstance) {
 
       if (!passwordMatches) return sendInvalidRiderLogin(reply)
 
-      if (riderUser.status === 'suspended' || riderUser.status === 'disabled') {
+      if (
+        riderUser.status === 'suspended' ||
+        riderUser.status === 'disabled' ||
+        riderUser.availabilityStatus === 'suspended'
+      ) {
         return reply.status(403).send({
           error: 'account_unavailable',
           message: 'This rider account is not available. Please contact support.',
@@ -137,6 +142,7 @@ export async function riderRoutes(app: FastifyInstance) {
 
         await tx.insert(authSessions).values({
           userId: riderUser.userId,
+          activeRole: 'rider',
           tokenHash: session.tokenHash,
           expiresAt: session.expiresAt,
         })
@@ -789,11 +795,21 @@ async function requireRider(cookieHeader: string | undefined, reply: FastifyRepl
     return null
   }
 
-  if (!sessionContext.authPayload.roles.includes('rider')) {
+  if (sessionContext.activeRole !== 'rider') {
     reply.status(403).send({
       error: 'forbidden',
       message: 'This route is only available to riders.',
     })
+    return null
+  }
+
+  const [rider] = await database
+    .select({ availabilityStatus: riderProfiles.availabilityStatus })
+    .from(riderProfiles)
+    .where(eq(riderProfiles.userId, sessionContext.userId))
+    .limit(1)
+  if (!rider || rider.availabilityStatus === 'suspended') {
+    reply.status(403).send({ error: 'forbidden', message: 'This rider account is suspended.' })
     return null
   }
 
