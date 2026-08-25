@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ArrowLeftIcon } from "@/components/svgs/DefaultIcons";
 import useNotificationStore, { Notification } from "@/store/notificationStore";
 import { useToastStore } from "@/store/toastStore";
+import PushNotificationControl from "@/components/PushNotificationControl";
 
 const API_BASE_URL =
   (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000").replace(/\/+$/, "");
@@ -111,6 +112,7 @@ export default function RoleNotificationsPage({
         </header>
 
         <div className="mb-5 flex gap-2 overflow-x-auto">
+          <PushNotificationControl />
           {filters.map((filter) => (
             <button
               key={filter.value}

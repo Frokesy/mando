@@ -5,6 +5,7 @@ import RootContainer from "./RootContainer";
 import ServiceWorkerRegister from "../components/ServiceWorkerRegister";
 import SalesAttributionCapture from "@/components/SalesAttributionCapture";
 import ToastContainer from "@/components/ToastContainer";
+import PushFeatureAnnouncement from "@/components/PushFeatureAnnouncement";
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://mando.ng"),
@@ -85,6 +86,7 @@ export default function RootLayout({
           <SalesAttributionCapture />
         </Suspense>
         <ServiceWorkerRegister />
+        <PushFeatureAnnouncement />
       </body>
     </html>
   );

@@ -11,6 +11,7 @@ import { salesAgentRoutes } from './routes/sales-agent.js'
 import { routePayRoutes } from './routes/routepay.js'
 import { restaurantRoutes } from './routes/restaurant.js'
 import { uploadRoutes } from './routes/uploads.js'
+import { pushRoutes } from './routes/push.js'
 
 type BuildAppOptions = {
   logger?: boolean
@@ -56,6 +57,7 @@ export function buildApp(options: BuildAppOptions = {}) {
   app.register(riderRoutes, { prefix: '/rider' })
   app.register(salesAgentRoutes, { prefix: '/sales-agent' })
   app.register(uploadRoutes, { prefix: '/uploads' })
+  app.register(pushRoutes, { prefix: '/push' })
 
   // Add no-cache headers to all dynamic responses
   app.addHook('onSend', async (_request, reply) => {

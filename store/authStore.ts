@@ -66,6 +66,7 @@ export const useAuthStore = create<AuthState>((set) => ({
           }
 
           set({ auth });
+          void syncExistingPushSubscription().catch(() => undefined);
           return auth;
         }
 
@@ -106,6 +107,21 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
   logout: async () => {
     try {
+      const trustedPushDevice = typeof window !== "undefined"
+        && window.localStorage.getItem("mando_push_trusted_device") === "true";
+      if (!trustedPushDevice && typeof window !== "undefined" && "serviceWorker" in navigator) {
+        const registration = await navigator.serviceWorker.ready;
+        const subscription = await registration.pushManager.getSubscription();
+        if (subscription) {
+          await fetch(`${API_BASE_URL}/push/subscriptions`, {
+            method: "DELETE",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ endpoint: subscription.endpoint }),
+          }).catch(() => undefined);
+          await subscription.unsubscribe().catch(() => false);
+        }
+      }
       await fetch(`${API_BASE_URL}/auth/logout`, {
         method: "POST",
         credentials: "include",
@@ -117,3 +133,16 @@ export const useAuthStore = create<AuthState>((set) => ({
 }));
 
 export default useAuthStore;
+
+async function syncExistingPushSubscription() {
+  if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
+  const registration = await navigator.serviceWorker.ready;
+  const subscription = await registration.pushManager.getSubscription();
+  if (!subscription) return;
+  await fetch(`${API_BASE_URL}/push/subscriptions`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(subscription.toJSON()),
+  });
+}

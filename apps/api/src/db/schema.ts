@@ -1295,6 +1295,41 @@ export const notifications = pgTable(
   ],
 )
 
+export const pushSubscriptions = pgTable(
+  'push_subscriptions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    role: userRoleEnum('role').notNull(),
+    endpoint: text('endpoint').notNull(),
+    p256dh: text('p256dh').notNull(),
+    auth: text('auth').notNull(),
+    userAgent: text('user_agent'),
+    lastUsedAt: timestampWithTimezone('last_used_at').notNull().defaultNow(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex('push_subscriptions_endpoint_unique').on(table.endpoint),
+    index('push_subscriptions_user_id_index').on(table.userId),
+  ],
+)
+
+export const pushDeliveries = pgTable(
+  'push_deliveries',
+  {
+    notificationId: uuid('notification_id').notNull().references(() => notifications.id, { onDelete: 'cascade' }),
+    subscriptionId: uuid('subscription_id').notNull().references(() => pushSubscriptions.id, { onDelete: 'cascade' }),
+    attemptedAt: timestampWithTimezone('attempted_at').notNull().defaultNow(),
+    deliveredAt: timestampWithTimezone('delivered_at'),
+    error: text('error'),
+  },
+  (table) => [primaryKey({
+    name: 'push_deliveries_notification_id_subscription_id_pk',
+    columns: [table.notificationId, table.subscriptionId],
+  })],
+)
+
 export const activityEvents = pgTable(
   'activity_events',
   {
