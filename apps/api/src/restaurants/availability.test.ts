@@ -72,3 +72,20 @@ test('fails closed for a malformed configured day schedule', () => {
   assert.equal(availability.isOpen, false)
   assert.equal(availability.status, 'Schedule unavailable')
 })
+
+test('supports explicit comma-separated opening days', () => {
+  const schedule = { openingTime: '08:00', closingTime: '20:00', openDays: 'Mon, Wed, Fri' }
+  assert.equal(getRestaurantAvailability(schedule, new Date('2026-08-24T11:00:00Z')).isOpen, true)
+  assert.equal(getRestaurantAvailability(schedule, new Date('2026-08-25T11:00:00Z')).isOpen, false)
+  assert.equal(getRestaurantAvailability(schedule, new Date('2026-08-26T11:00:00Z')).isOpen, true)
+})
+
+test('rejects a schedule containing both valid and invalid day text', () => {
+  const availability = getRestaurantAvailability({
+    openingTime: '08:00',
+    closingTime: '20:00',
+    openDays: 'Mon, someday',
+  })
+  assert.equal(availability.isOpen, false)
+  assert.equal(availability.status, 'Schedule unavailable')
+})

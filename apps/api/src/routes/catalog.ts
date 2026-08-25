@@ -403,6 +403,7 @@ function serializeRestaurantSummary(
     serviceArea: restaurant.serviceArea,
     openingTime: restaurant.openingTime,
     closingTime: restaurant.closingTime,
+    openDays: restaurant.openDays,
     isOpen: availability.isOpen,
     availabilityLabel: availability.status,
   }

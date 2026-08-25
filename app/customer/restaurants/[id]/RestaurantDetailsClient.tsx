@@ -7,6 +7,7 @@ import BottomNav from "@/components/BottomNav";
 import { ArrowLeftIcon, LocationIcon } from "@/components/svgs/DefaultIcons";
 import useCartStore from "@/store/cartStore";
 import { useToastStore } from "@/store/toastStore";
+import { formatRestaurantSchedule } from "@/lib/restaurantSchedule";
 
 const API_BASE_URL =
   (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000").replace(/\/+$/, "");
@@ -28,6 +29,7 @@ type RestaurantDetails = {
   availabilityLabel: string;
   openingTime: string | null;
   closingTime: string | null;
+  openDays: string | null;
   serviceArea: {
     name: string;
     city: string;
@@ -275,9 +277,15 @@ const RestaurantDetailsClient = ({ restaurantId }: RestaurantDetailsProps) => {
       <section className="mt-5 rounded-3xl bg-white p-5 shadow-sm">
         {!restaurant.isOpen ? (
           <div className="mb-4 rounded-2xl border border-red-100 bg-red-50 p-4 text-sm text-red-700">
-            This restaurant is currently closed. Ordering hours are {restaurant.openingTime ?? "not available"}{restaurant.closingTime ? ` to ${restaurant.closingTime}` : ""}.
+            This restaurant is currently closed. {formatRestaurantSchedule(restaurant.openDays, restaurant.openingTime, restaurant.closingTime)}.
           </div>
         ) : null}
+        <div className="mb-4 rounded-2xl bg-[#F8F8F8] p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[#A4A4A4]">Opening schedule</p>
+          <p className="mt-1 text-sm font-semibold text-[#141B34]">
+            {formatRestaurantSchedule(restaurant.openDays, restaurant.openingTime, restaurant.closingTime)}
+          </p>
+        </div>
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-sm leading-6 text-[#6B6B6B]">

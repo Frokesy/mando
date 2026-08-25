@@ -26,6 +26,9 @@ type RestaurantSummary = {
   reviewCount: number;
   isOpen: boolean;
   availabilityLabel: string;
+  openingTime: string | null;
+  closingTime: string | null;
+  openDays: string | null;
   serviceArea: {
     name: string;
     city: string;
@@ -260,6 +263,9 @@ function RestaurantGrid({
           imgUrl={restaurant.imageUrl ?? "/restaurant-dummy.png"}
           isOpen={restaurant.isOpen}
           availabilityLabel={restaurant.availabilityLabel}
+          openingTime={restaurant.openingTime}
+          closingTime={restaurant.closingTime}
+          openDays={restaurant.openDays}
         />
       ))}
     </div>

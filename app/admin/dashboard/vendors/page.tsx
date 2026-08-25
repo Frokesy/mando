@@ -21,6 +21,7 @@ import StatsCard from "@/components/cards/StatsCard";
 import { TablePagination, useTablePagination } from "@/components/admin/TablePagination";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import { useToastStore } from "@/store/toastStore";
+import { formatRestaurantSchedule } from "@/lib/restaurantSchedule";
 
 const API_BASE_URL =
   (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000").replace(/\/+$/, "");
@@ -576,6 +577,16 @@ function OverviewTab({
         <DetailRow label="Mando price" value={formatCurrency(vendor.mandoPrice)} />
         <DetailRow label="Vendor payout" value={formatCurrency(vendor.vendorPayout)} />
         <DetailRow label="Commission" value={formatPercent(vendor.commissionRateBps)} />
+      </PanelSection>
+
+      <PanelSection title="Opening Schedule">
+        <DetailRow label="Days and hours" value={formatRestaurantSchedule(
+          vendor.operations?.openDays,
+          vendor.operations?.openingTime,
+          vendor.operations?.closingTime,
+        )} />
+        <DetailRow label="Delivery radius" value={vendor.operations?.deliveryRadius ?? "Not configured"} />
+        <DetailRow label="Delivery type" value={vendor.operations?.deliveryType ?? "Not configured"} />
       </PanelSection>
 
       <PanelSection title="Documents">
@@ -1381,12 +1392,81 @@ function OperationsStep({ vendor }: { vendor: AdminVendor | null }) {
     <div className="grid grid-cols-2 gap-4">
       <FormField label="Opening time" name="openingTime" type="time" defaultValue={vendor?.operations?.openingTime ?? ""} />
       <FormField label="Closing time" name="closingTime" type="time" defaultValue={vendor?.operations?.closingTime ?? ""} />
-      <FormField label="Open days" name="openDays" defaultValue={vendor?.operations?.openDays ?? ""} placeholder="Mon - Sat" />
+      <OpenDaysField defaultValue={vendor?.operations?.openDays ?? ""} />
       <FormField label="Delivery radius" name="deliveryRadius" defaultValue={vendor?.operations?.deliveryRadius ?? ""} placeholder="5km" />
       <FormField label="Minimum order" name="minimumOrder" type="number" defaultValue={vendor ? String(vendor.clientPrice) : ""} placeholder="2500" />
       <SelectField label="Delivery type" name="deliveryType" defaultValue={vendor?.operations?.deliveryType ?? "Mando rider"} options={["Mando rider", "Vendor delivery", "Pickup only"]} />
     </div>
   );
+}
+
+const RESTAURANT_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
+
+function OpenDaysField({ defaultValue }: { defaultValue: string }) {
+  const [selectedDays, setSelectedDays] = useState<string[]>(() => parseAdminOpenDays(defaultValue));
+
+  return (
+    <div className="col-span-2">
+      <div className="mb-2 flex items-center justify-between">
+        <label className="text-[10px] font-medium text-[#364153]">Opening days</label>
+        <button
+          type="button"
+          onClick={() => setSelectedDays(selectedDays.length === RESTAURANT_DAYS.length ? [] : [...RESTAURANT_DAYS])}
+          className="text-[9px] font-semibold text-[#FE9A00]"
+        >
+          {selectedDays.length === RESTAURANT_DAYS.length ? "Clear all" : "Select daily"}
+        </button>
+      </div>
+      <input type="hidden" name="openDays" value={selectedDays.join(", ")} />
+      <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
+        {RESTAURANT_DAYS.map((day) => {
+          const selected = selectedDays.includes(day);
+          return (
+            <button
+              key={day}
+              type="button"
+              aria-pressed={selected}
+              onClick={() => setSelectedDays((current) => selected ? current.filter((item) => item !== day) : [...current, day])}
+              className={`rounded-lg border px-2 py-2 text-[10px] font-semibold ${selected ? "border-[#FE9A00] bg-[#FFFBEB] text-[#B96D00]" : "border-gray-200 bg-white text-[#6A7282]"}`}
+            >
+              {day}
+            </button>
+          );
+        })}
+      </div>
+      <p className="mt-2 text-[9px] text-[#99A1AF]">Select every day this restaurant accepts orders.</p>
+    </div>
+  );
+}
+
+function parseAdminOpenDays(value: string) {
+  const normalized = value.trim().toLowerCase().replace(/[–—]/g, "-").replace(/\s+to\s+/g, "-");
+  if (!normalized) return [];
+  if (["daily", "every day", "all days", "all week"].includes(normalized)) return [...RESTAURANT_DAYS];
+  if (normalized === "weekdays") return [...RESTAURANT_DAYS.slice(0, 5)];
+  if (normalized === "weekends") return ["Sat", "Sun"];
+
+  const orderedDays = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+  const selected = new Set<string>();
+  for (const segment of normalized.replace(/days?/g, "").split(",")) {
+    const [startText, endText] = segment.trim().split("-").map((part) => part.trim().slice(0, 3));
+    const start = orderedDays.indexOf(startText);
+    if (start < 0) continue;
+    if (!endText) {
+      selected.add(RESTAURANT_DAYS.find((day) => day.toLowerCase() === startText) ?? "");
+      continue;
+    }
+    const end = orderedDays.indexOf(endText);
+    if (end < 0) continue;
+    let cursor = start;
+    for (let count = 0; count < 7; count += 1) {
+      const day = RESTAURANT_DAYS.find((item) => item.toLowerCase() === orderedDays[cursor]);
+      if (day) selected.add(day);
+      if (cursor === end) break;
+      cursor = (cursor + 1) % 7;
+    }
+  }
+  return RESTAURANT_DAYS.filter((day) => selected.has(day));
 }
 
 function DocumentsStep({

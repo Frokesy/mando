@@ -80,16 +80,18 @@ function parseOpenDays(value: string | null) {
   const selected = new Set<number>()
 
   for (const segment of normalized.split(',')) {
-    const [startText, endText] = segment.trim().split('-').map((part) => part.trim().slice(0, 3))
+    const rangeParts = segment.trim().split('-').map((part) => part.trim())
+    if (rangeParts.length > 2 || rangeParts.some((part) => !part)) return null
+    const [startText, endText] = rangeParts.map((part) => part.slice(0, 3))
     const start = WEEKDAYS.indexOf(startText as (typeof WEEKDAYS)[number])
-    if (start < 0) continue
+    if (start < 0) return null
     if (!endText) {
       selected.add(start)
       continue
     }
 
     const end = WEEKDAYS.indexOf(endText as (typeof WEEKDAYS)[number])
-    if (end < 0) continue
+    if (end < 0) return null
     let cursor = start
     for (let count = 0; count < 7; count += 1) {
       selected.add(cursor)

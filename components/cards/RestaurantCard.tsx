@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { FaStar } from "react-icons/fa";
 import { LocationIcon, MoneyIcon, TimerIcon } from "@/components/svgs/DefaultIcons";
+import { formatRestaurantSchedule } from "@/lib/restaurantSchedule";
 
 type RestaurantCardProps = {
   id: string;
@@ -15,6 +16,9 @@ type RestaurantCardProps = {
   imgUrl: string;
   isOpen: boolean;
   availabilityLabel: string;
+  openingTime: string | null;
+  closingTime: string | null;
+  openDays: string | null;
 };
 
 const RestaurantCard = ({
@@ -30,6 +34,9 @@ const RestaurantCard = ({
   imgUrl,
   isOpen,
   availabilityLabel,
+  openingTime,
+  closingTime,
+  openDays,
 }: RestaurantCardProps) => {
   return (
     <div className="bg-white rounded-lg shadow-md overflow-hidden">
@@ -63,6 +70,11 @@ const RestaurantCard = ({
             <MoneyIcon />
             <span>Min order: {minOrder}</span>
           </div>
+        </div>
+
+        <div className="mb-4 flex items-start gap-2 rounded-lg bg-[#F7F7F7] px-3 py-2 text-[12px] text-[#4D4D4D]">
+          <TimerIcon />
+          <span>{formatRestaurantSchedule(openDays, openingTime, closingTime)}</span>
         </div>
 
         <div className="flex items-center justify-between">
