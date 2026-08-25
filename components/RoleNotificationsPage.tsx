@@ -111,8 +111,11 @@ export default function RoleNotificationsPage({
           ) : null}
         </header>
 
-        <div className="mb-5 flex gap-2 overflow-x-auto">
+        <div className="mb-4 rounded-2xl border border-gray-200 bg-white p-4">
           <PushNotificationControl />
+        </div>
+
+        <div className="mb-5 flex gap-2 overflow-x-auto">
           {filters.map((filter) => (
             <button
               key={filter.value}
