@@ -5,6 +5,12 @@ import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { CautionIcon } from "../../../components/svgs/DefaultIcons";
+import {
+  API_BASE_URL,
+  PASSWORD_RESET_EMAIL_KEY,
+  PASSWORD_RESET_TOKEN_KEY,
+  readApiMessage,
+} from "@/lib/passwordReset";
 
 const OTP_LENGTH = 6;
 
@@ -14,6 +20,7 @@ export default function ForgotPasswordOtp() {
   const [values, setValues] = useState(Array(OTP_LENGTH).fill(""));
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [resending, setResending] = useState(false);
 
   const otp = useMemo(() => values.join(""), [values]);
 
@@ -38,6 +45,14 @@ export default function ForgotPasswordOtp() {
     }
   };
 
+  const handlePaste = (event: React.ClipboardEvent<HTMLInputElement>) => {
+    const pasted = event.clipboardData.getData("text").replace(/\D/g, "").slice(0, OTP_LENGTH);
+    if (!pasted) return;
+    event.preventDefault();
+    setValues(Array.from({ length: OTP_LENGTH }, (_, index) => pasted[index] ?? ""));
+    focusInput(Math.min(pasted.length, OTP_LENGTH) - 1);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -50,12 +65,46 @@ export default function ForgotPasswordOtp() {
     }
 
     try {
-      // frontend-only demo flow
+      const email = window.sessionStorage.getItem(PASSWORD_RESET_EMAIL_KEY);
+      if (!email) throw new Error("Start again and enter your email address.");
+      const response = await fetch(`${API_BASE_URL}/auth/password-reset/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, otp }),
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok || typeof result?.resetToken !== "string") {
+        throw new Error(result?.message ?? "The code is invalid or has expired.");
+      }
+      window.sessionStorage.setItem(PASSWORD_RESET_TOKEN_KEY, result.resetToken);
       router.push("/forgot-password/reset");
     } catch (err) {
-      setError("Unable to verify code. Please try again.");
+      setError(err instanceof Error ? err.message : "Unable to verify code. Please try again.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResend = async () => {
+    setError("");
+    const email = window.sessionStorage.getItem(PASSWORD_RESET_EMAIL_KEY);
+    if (!email) {
+      setError("Start again and enter your email address.");
+      return;
+    }
+    setResending(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/password-reset/request`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      if (!response.ok) throw new Error(await readApiMessage(response, "Unable to resend the code."));
+      setValues(Array(OTP_LENGTH).fill(""));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to resend the code.");
+    } finally {
+      setResending(false);
     }
   };
 
@@ -95,6 +144,9 @@ export default function ForgotPasswordOtp() {
                 value={value}
                 onChange={(e) => handleChange(index, e.target.value)}
                 onKeyDown={(e) => handleKeyDown(index, e)}
+                onPaste={handlePaste}
+                autoComplete={index === 0 ? "one-time-code" : "off"}
+                aria-label={`Verification code digit ${index + 1}`}
                 className="h-16 w-full rounded-xl border border-[#E9EAEB] text-center text-xl font-semibold focus:border-[#DFB400] focus:outline-none focus:ring-2 focus:ring-[#DFB400]/20"
               />
             ))}
@@ -106,6 +158,14 @@ export default function ForgotPasswordOtp() {
             className="w-full bg-[#DFB400] p-4 rounded-lg text-center text-white font-semibold hover:bg-[#C9A300] transition disabled:opacity-50"
           >
             {loading ? "Verifying..." : "Verify code"}
+          </button>
+          <button
+            type="button"
+            disabled={loading || resending}
+            onClick={() => void handleResend()}
+            className="w-full text-sm font-medium text-[#A4A4A4] hover:text-[#DFB400] disabled:opacity-50"
+          >
+            {resending ? "Sending another code..." : "Didn't receive it? Send another code"}
           </button>
         </form>
 

@@ -5,9 +5,17 @@ import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { CautionIcon, PasswordIcon, EyeIcon, EyeOffIcon } from "../../../components/svgs/DefaultIcons";
+import { useToastStore } from "@/store/toastStore";
+import {
+  API_BASE_URL,
+  PASSWORD_RESET_EMAIL_KEY,
+  PASSWORD_RESET_TOKEN_KEY,
+  readApiMessage,
+} from "@/lib/passwordReset";
 
 export default function ResetPassword() {
   const router = useRouter();
+  const showToast = useToastStore((state) => state.showToast);
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -47,10 +55,22 @@ export default function ResetPassword() {
     }
 
     try {
-      // frontend-only flow
+      const email = window.sessionStorage.getItem(PASSWORD_RESET_EMAIL_KEY);
+      const resetToken = window.sessionStorage.getItem(PASSWORD_RESET_TOKEN_KEY);
+      if (!email || !resetToken) throw new Error("Your reset session has expired. Please request a new code.");
+      const response = await fetch(`${API_BASE_URL}/auth/password-reset/complete`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ email, resetToken, password }),
+      });
+      if (!response.ok) throw new Error(await readApiMessage(response, "Unable to reset your password."));
+      window.sessionStorage.removeItem(PASSWORD_RESET_EMAIL_KEY);
+      window.sessionStorage.removeItem(PASSWORD_RESET_TOKEN_KEY);
+      showToast("Password reset successfully. Sign in with your new password.", "success");
       router.push("/login");
     } catch (err) {
-      setError("Unable to reset password. Please try again.");
+      setError(err instanceof Error ? err.message : "Unable to reset password. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -90,6 +110,8 @@ export default function ResetPassword() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="New password"
+                autoComplete="new-password"
+                required
                 className="w-full p-4 pl-10 pr-10 border border-[#E9EAEB] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#DFB400] text-black placeholder-[#A4A4A4]"
               />
               <button
@@ -114,6 +136,8 @@ export default function ResetPassword() {
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 placeholder="Confirm password"
+                autoComplete="new-password"
+                required
                 className="w-full p-4 pl-10 pr-10 border border-[#E9EAEB] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#DFB400] text-black placeholder-[#A4A4A4]"
               />
               <button

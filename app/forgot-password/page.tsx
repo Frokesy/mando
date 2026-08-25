@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { CautionIcon } from "../../components/svgs/DefaultIcons";
+import { API_BASE_URL, PASSWORD_RESET_EMAIL_KEY, readApiMessage } from "@/lib/passwordReset";
 
 export default function ForgotPassword() {
   const router = useRouter();
@@ -30,10 +31,19 @@ export default function ForgotPassword() {
     }
 
     try {
-      // frontend-only flow: pretend OTP is sent
+      const normalizedEmail = email.trim().toLowerCase();
+      const response = await fetch(`${API_BASE_URL}/auth/password-reset/request`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: normalizedEmail }),
+      });
+      if (!response.ok) {
+        throw new Error(await readApiMessage(response, "Unable to send verification code."));
+      }
+      window.sessionStorage.setItem(PASSWORD_RESET_EMAIL_KEY, normalizedEmail);
       router.push("/forgot-password/otp");
     } catch (err) {
-      setError("Unable to send OTP. Please try again.");
+      setError(err instanceof Error ? err.message : "Unable to send OTP. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -70,6 +80,8 @@ export default function ForgotPassword() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="Enter your email"
+              autoComplete="email"
+              required
               className="w-full p-4 border border-[#E9EAEB] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#DFB400] text-black placeholder-[#A4A4A4]"
             />
           </div>

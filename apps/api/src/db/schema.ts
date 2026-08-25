@@ -1402,6 +1402,8 @@ export const verificationTokens = pgTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     purpose: verificationTokenPurposeEnum('purpose').notNull(),
     tokenHash: text('token_hash').notNull(),
+    tokenKind: text('token_kind').notNull().default('otp'),
+    attemptCount: integer('attempt_count').notNull().default(0),
     expiresAt: timestampWithTimezone('expires_at').notNull(),
     usedAt: timestampWithTimezone('used_at'),
     createdAt: createdAt(),

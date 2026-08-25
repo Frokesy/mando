@@ -7,6 +7,7 @@ import Link from "next/link";
 import { CautionIcon, PasswordIcon, EyeIcon, EyeOffIcon } from "../../components/svgs/DefaultIcons";
 import { useAuthStore } from "@/store/authStore";
 import { useToastStore } from "@/store/toastStore";
+import { PASSWORD_RESET_EMAIL_KEY } from "@/lib/passwordReset";
 
 const API_BASE_URL =
   (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000").replace(/\/+$/, "");
@@ -108,11 +109,19 @@ export default function Login() {
       }
 
       try {
-        // frontend-only flow: send OTP and navigate
+        const normalizedEmail = formData.email.trim().toLowerCase();
+        const response = await fetch(`${API_BASE_URL}/auth/password-reset/request`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: normalizedEmail }),
+        });
+        const result = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(result?.message ?? "Unable to send code. Please try again.");
+        window.sessionStorage.setItem(PASSWORD_RESET_EMAIL_KEY, normalizedEmail);
         showToast("Verification code sent", "success");
         router.push("/forgot-password/otp");
       } catch (err) {
-        const message = "Unable to send code. Please try again.";
+        const message = err instanceof Error ? err.message : "Unable to send code. Please try again.";
         setError(message);
         showToast(message, "error");
       } finally {
@@ -195,6 +204,13 @@ export default function Login() {
             ? "Enter your email to receive a verification code."
             : "Sign in to continue to your account"}
         </p>
+
+        {error && (
+          <div className="mt-4 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
+            <CautionIcon color="#E53935" size={14} />
+            <span>{error}</span>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="mt-8 space-y-4">
           <div>
@@ -282,7 +298,7 @@ export default function Login() {
 
         <div className="text-center mt-6">
           <p className="text-sm text-[#A4A4A4]">
-            Don't have an account?{' '}
+            Don&apos;t have an account?{' '}
             <Link href="/signup" className="font-medium text-black hover:text-[#DFB400]">
               Sign up
             </Link>

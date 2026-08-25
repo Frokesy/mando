@@ -138,6 +138,35 @@ export async function sendRestaurantCredentialsEmail(input: RestaurantCredential
   })
 }
 
+export async function sendPasswordResetOtpEmail(input: {
+  email: string
+  fullName: string
+  otp: string
+  requestId: string
+}) {
+  return sendCredentialMessage({
+    email: input.email,
+    subject: 'Your Mando password reset code',
+    idempotencyKey: `password-reset/${input.requestId}`,
+    text: [
+      `Hello ${input.fullName},`, '',
+      `Your Mando password reset code is: ${input.otp}`, '',
+      'This code expires in 10 minutes. If you did not request this, you can ignore this email.',
+      'Never share this code with anyone.',
+    ].join('\n'),
+    html: `
+      <div style="font-family:Arial,sans-serif;line-height:1.6;color:#141b34;max-width:560px;margin:auto">
+        <h1 style="font-size:24px">Reset your Mando password</h1>
+        <p>Hello ${escapeHtml(input.fullName)},</p>
+        <p>Enter this verification code to continue:</p>
+        <div style="background:#f8f8f8;border:1px solid #e9eaeb;border-radius:12px;padding:20px;text-align:center;font-size:32px;font-weight:bold;letter-spacing:8px">${escapeHtml(input.otp)}</div>
+        <p>This code expires in 10 minutes. If you did not request this change, you can safely ignore this email.</p>
+        <p style="color:#6b6b6b">Never share this code with anyone.</p>
+      </div>
+    `,
+  })
+}
+
 async function sendCredentialMessage(input: {
   email: string
   subject: string
