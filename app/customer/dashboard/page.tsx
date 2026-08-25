@@ -42,6 +42,8 @@ type ComboSummary = {
     id: string;
     name: string;
     slug?: string;
+    isOpen: boolean;
+    availabilityLabel: string;
   };
 };
 
@@ -268,11 +270,11 @@ const Dashboard = () => {
       if (!response.ok) throw new Error("Unable to load promo combos");
       const data = (await response.json()) as { combos: ComboSummary[] };
       const promoCombos = data.combos.filter((combo) =>
-        combo.restaurant.name.toLowerCase().includes("mjay"),
+        combo.restaurant.name.toLowerCase().includes("mjay") && combo.restaurant.isOpen,
       );
 
       if (!promoCombos.length) {
-        showToast("Promo combos are not available right now", "error");
+        showToast("Promo combos are unavailable or the restaurant is currently closed", "error");
         return;
       }
 
@@ -463,4 +465,3 @@ function ComboSkeleton() {
 }
 
 export default Dashboard;
-

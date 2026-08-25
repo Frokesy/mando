@@ -20,6 +20,8 @@ type ComboSummary = {
     id: string;
     name: string;
     slug: string;
+    isOpen: boolean;
+    availabilityLabel: string;
   };
 };
 
@@ -149,6 +151,7 @@ const FeaturedMealCombos = () => {
                   rating={`${combo.ratingAverage || "New"}${combo.reviewCount ? ` (${combo.reviewCount})` : ""}`}
                   imgUrl={combo.imageUrl ?? "/dummy-img.jpg"}
                   href={`/customer/featured-combos/${combo.id}`}
+                  isOpen={group.restaurant.isOpen}
                 />
               ))}
             </div>

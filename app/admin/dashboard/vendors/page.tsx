@@ -1214,6 +1214,9 @@ function VendorFormModal({
         ["ownerName", "owner/manager name"],
         ["phone", "phone number"],
         ["email", "email address"],
+        ["openingTime", "opening time"],
+        ["closingTime", "closing time"],
+        ["openDays", "open days"],
         ["minimumOrder", "minimum order"],
       ] as const;
 
@@ -1606,4 +1609,3 @@ function formatDate(value: string) {
 }
 
 export default AdminVendorsPage;
-

@@ -13,6 +13,7 @@ import {
 import { getCurrentSessionContext } from '../auth/current-session.js'
 import { database } from '../db/client.js'
 import { isRealizedCommissionStatus } from '../finance/earnings.js'
+import { isValidOpenDaysExpression } from '../restaurants/availability.js'
 import {
   decryptPayoutAccountNumber,
   encryptPayoutAccountNumber,
@@ -111,6 +112,11 @@ const menuItemParamsSchema = z.object({
   itemId: z.uuid(),
 })
 
+const businessTimeSchema = z.union([
+  z.literal(''),
+  z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/, 'Use a valid 24-hour time.'),
+])
+
 const vendorBodySchema = z.object({
   restaurantName: z.string().trim().min(2),
   fullAddress: z.string().trim().min(4),
@@ -120,8 +126,8 @@ const vendorBodySchema = z.object({
   phone: z.string().trim().min(5),
   email: z.email().trim().toLowerCase(),
   website: z.string().trim().optional(),
-  openingTime: z.string().trim().optional(),
-  closingTime: z.string().trim().optional(),
+  openingTime: businessTimeSchema.optional(),
+  closingTime: businessTimeSchema.optional(),
   openDays: z.string().trim().optional(),
   deliveryRadius: z.string().trim().optional(),
   minimumOrder: z.coerce.number().int().nonnegative().default(0),
@@ -130,6 +136,34 @@ const vendorBodySchema = z.object({
   foodHandlerCertificateUrl: z.url().nullable().optional(),
   taxIdentificationNumber: z.string().trim().optional(),
   healthSafetyPermitUrl: z.url().nullable().optional(),
+}).superRefine((input, context) => {
+  const hasOpeningTime = Boolean(input.openingTime)
+  const hasClosingTime = Boolean(input.closingTime)
+  const hasOpenDays = Boolean(input.openDays)
+
+  if (!hasOpeningTime || !hasClosingTime || !hasOpenDays) {
+    context.addIssue({
+      code: 'custom',
+      path: ['openingTime'],
+      message: 'Opening time, closing time, and open days are required.',
+    })
+  }
+
+  if (hasOpeningTime !== hasClosingTime) {
+    context.addIssue({
+      code: 'custom',
+      path: hasOpeningTime ? ['closingTime'] : ['openingTime'],
+      message: 'Opening and closing times must be provided together.',
+    })
+  }
+
+  if (input.openDays && !isValidOpenDaysExpression(input.openDays)) {
+    context.addIssue({
+      code: 'custom',
+      path: ['openDays'],
+      message: 'Use a value such as Mon - Sat, Weekdays, Weekends, or Daily.',
+    })
+  }
 })
 
 const riderBodySchema = z.object({
@@ -1007,7 +1041,7 @@ export async function adminRoutes(app: FastifyInstance) {
     if (!parsedBody.success) {
       return reply.status(400).send({
         error: 'validation_error',
-        message: 'Please complete the vendor onboarding form.',
+        message: parsedBody.error.issues[0]?.message ?? 'Please complete the vendor onboarding form.',
       })
     }
 
@@ -1053,7 +1087,9 @@ export async function adminRoutes(app: FastifyInstance) {
     if (!parsedParams.success || !parsedBody.success) {
       return reply.status(400).send({
         error: 'validation_error',
-        message: 'Please provide valid vendor details.',
+        message: parsedBody.success
+          ? 'Please provide valid vendor details.'
+          : parsedBody.error.issues[0]?.message ?? 'Please provide valid vendor details.',
       })
     }
 

@@ -30,6 +30,8 @@ type ComboDetails = {
     id: string;
     name: string;
     slug: string;
+    isOpen: boolean;
+    availabilityLabel: string;
   };
   items: ComboItem[];
 };
@@ -157,6 +159,10 @@ const ComboDetailsPage = ({ params }: { params: Promise<{ id: string }> }) => {
 
         <div className="absolute inset-0 bg-black/45" />
 
+        <div className={`absolute right-4 top-4 rounded-full px-3 py-1.5 text-xs font-semibold text-white ${combo.restaurant.isOpen ? "bg-emerald-600" : "bg-red-600"}`}>
+          {combo.restaurant.availabilityLabel}
+        </div>
+
         <div className="absolute bottom-4 left-4 flex flex-col gap-2 text-[12px] text-white">
           <div>
             <p className="text-[13px]">{combo.restaurant.name}</p>
@@ -257,8 +263,29 @@ const ComboDetailsPage = ({ params }: { params: Promise<{ id: string }> }) => {
 
       <button
         type="button"
-        className="w-full mt-10 rounded-xl bg-[#DFB400] py-4 text-[16px] font-semibold text-white shadow-lg shadow-[#DFB400]/20"
-        onClick={() => {
+        disabled={!combo.restaurant.isOpen}
+        className="w-full mt-10 rounded-xl bg-[#DFB400] py-4 text-[16px] font-semibold text-white shadow-lg shadow-[#DFB400]/20 disabled:cursor-not-allowed disabled:bg-gray-400 disabled:shadow-none"
+        onClick={async () => {
+          if (!combo.restaurant.isOpen) {
+            showToast("This restaurant is currently closed", "error");
+            return;
+          }
+          try {
+            const response = await fetch(`${API_BASE_URL}/customer/combos/${combo.id}`, {
+              credentials: "include",
+              cache: "no-store",
+            });
+            if (!response.ok) throw new Error();
+            const latest = (await response.json()) as { combo: ComboDetails };
+            setCombo(latest.combo);
+            if (!latest.combo.restaurant.isOpen) {
+              showToast("This restaurant has just closed. The combo was not added.", "error");
+              return;
+            }
+          } catch {
+            showToast("Unable to confirm the restaurant is open. Please try again.", "error");
+            return;
+          }
           addItem({
             id: combo.id,
             image: combo.imageUrl ?? "/test-img-one.png",
@@ -277,7 +304,7 @@ const ComboDetailsPage = ({ params }: { params: Promise<{ id: string }> }) => {
           showToast(cartItem ? "Combo updated successfully" : "Added to cart successfully");
         }}
       >
-        {cartItem ? "Update cart" : "Add to cart"}
+        {!combo.restaurant.isOpen ? "Restaurant currently closed" : cartItem ? "Update cart" : "Add to cart"}
       </button>
 
       <BottomNav />

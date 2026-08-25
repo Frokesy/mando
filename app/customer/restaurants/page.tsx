@@ -24,6 +24,8 @@ type RestaurantSummary = {
   preparationMaxMinutes: number | null;
   ratingAverage: number;
   reviewCount: number;
+  isOpen: boolean;
+  availabilityLabel: string;
   serviceArea: {
     name: string;
     city: string;
@@ -256,6 +258,8 @@ function RestaurantGrid({
           area={`${restaurant.serviceArea.name}, ${restaurant.serviceArea.city}`}
           distance={distance}
           imgUrl={restaurant.imageUrl ?? "/restaurant-dummy.png"}
+          isOpen={restaurant.isOpen}
+          availabilityLabel={restaurant.availabilityLabel}
         />
       ))}
     </div>

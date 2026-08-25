@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { getCurrentSessionContext } from '../auth/current-session.js'
 import { serializeClearSessionCookie } from '../auth/index.js'
 import { database } from '../db/client.js'
+import { getRestaurantAvailability } from '../restaurants/availability.js'
 import {
   addresses,
   adminSettings,
@@ -25,6 +26,7 @@ import {
   referrals,
   restaurantEarnings,
   restaurantMembers,
+  restaurantOperations,
   restaurants,
   serviceAreas,
 } from '../db/schema.js'
@@ -696,6 +698,29 @@ export async function customerRoutes(app: FastifyInstance) {
         message: 'One or more combos are unavailable. Please refresh your cart.',
       })
     }
+
+    const [restaurantSchedule] = await database
+      .select({
+        openingTime: restaurantOperations.openingTime,
+        closingTime: restaurantOperations.closingTime,
+        openDays: restaurantOperations.openDays,
+      })
+      .from(restaurantOperations)
+      .where(eq(restaurantOperations.restaurantId, restaurantId))
+      .limit(1)
+    const availability = getRestaurantAvailability(restaurantSchedule ?? {
+      openingTime: null,
+      closingTime: null,
+      openDays: null,
+    })
+
+    if (!availability.isOpen) {
+      return reply.status(409).send({
+        error: 'restaurant_closed',
+        message: 'This restaurant is currently closed. Please order during its opening hours.',
+      })
+    }
+
     const comboById = new Map(comboRows.map((combo) => [combo.id, combo]))
     const componentRows = await getComboComponents(requestedComboIds)
     const componentsByComboId = groupComponentsByComboId(componentRows)
@@ -814,6 +839,17 @@ export async function customerRoutes(app: FastifyInstance) {
     const initialOrderStatus = paymentIsBypassed
       ? 'awaiting_restaurant'
       : 'pending_payment'
+
+    if (!getRestaurantAvailability(restaurantSchedule ?? {
+      openingTime: null,
+      closingTime: null,
+      openDays: null,
+    }).isOpen) {
+      return reply.status(409).send({
+        error: 'restaurant_closed',
+        message: 'This restaurant has just closed. Your order was not created.',
+      })
+    }
 
     const createdOrder = await database.transaction(async (tx) => {
       const [order] = await tx

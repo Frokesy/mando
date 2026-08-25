@@ -13,6 +13,8 @@ type RestaurantCardProps = {
   area: string;
   distance: string;
   imgUrl: string;
+  isOpen: boolean;
+  availabilityLabel: string;
 };
 
 const RestaurantCard = ({
@@ -26,10 +28,17 @@ const RestaurantCard = ({
   area,
   distance,
   imgUrl,
+  isOpen,
+  availabilityLabel,
 }: RestaurantCardProps) => {
   return (
     <div className="bg-white rounded-lg shadow-md overflow-hidden">
-      <img src={imgUrl} alt={`${name} image`} className="w-full h-52 object-cover" />
+      <div className="relative">
+        <img src={imgUrl} alt={`${name} image`} className="w-full h-52 object-cover" />
+        <span className={`absolute left-3 top-3 rounded-full px-3 py-1 text-xs font-semibold text-white ${isOpen ? "bg-emerald-600" : "bg-red-600"}`}>
+          {availabilityLabel}
+        </span>
+      </div>
       <div className="p-6">
         <div className="flex justify-between items-start gap-4 mb-4">
           <div>
@@ -69,7 +78,7 @@ const RestaurantCard = ({
             href={`/customer/restaurants/${id}`}
             className="border border-[#DFB400] text-[#DFB400] font-semibold py-2 px-4 rounded-md hover:bg-[#DFB400] hover:text-white"
           >
-            Check restaurant
+            {isOpen ? "Check restaurant" : "View opening hours"}
           </Link>
         </div>
       </div>

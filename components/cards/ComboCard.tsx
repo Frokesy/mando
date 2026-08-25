@@ -8,6 +8,7 @@ type ComboCardProps = {
   rating?: string;
   imgUrl?: string;
   href?: string;
+  isOpen?: boolean;
 };
 
 const ComboCard = ({
@@ -17,6 +18,7 @@ const ComboCard = ({
   rating,
   imgUrl = "/dummy-img.jpg",
   href,
+  isOpen = true,
 }: ComboCardProps) => {
   const cardContent = (
     <>
@@ -25,14 +27,15 @@ const ComboCard = ({
         style={{ backgroundImage: `url(${imgUrl})` }}
       >
         <div className="bg-black/10 text-white h-[194px] rounded-lg p-3 flex flex-col justify-between">
-          <div className="flex justify-end items-center space-x-1">
+          <div className="flex items-center justify-between space-x-1">
+            {!isOpen ? <span className="rounded-full bg-red-600 px-2 py-1 text-xs font-semibold">Closed</span> : <span />}
             <StarIcon />
             {rating ? <p className="text-[14px]">{rating}</p> : null}
           </div>
 
           <div className="flex justify-end">
             <span className="bg-white uppercase border-3 border-[#DFB400] text-[#DFB400] font-semibold py-2 px-6 rounded-lg hover:bg-[#f0f0f0]">
-              Add
+              {isOpen ? "Add" : "View"}
             </span>
           </div>
         </div>

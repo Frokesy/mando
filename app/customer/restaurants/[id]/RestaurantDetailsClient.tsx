@@ -24,6 +24,10 @@ type RestaurantDetails = {
   streetAddress: string;
   ratingAverage?: number;
   reviewCount?: number;
+  isOpen: boolean;
+  availabilityLabel: string;
+  openingTime: string | null;
+  closingTime: string | null;
   serviceArea: {
     name: string;
     city: string;
@@ -123,6 +127,11 @@ const RestaurantDetailsClient = ({ restaurantId }: RestaurantDetailsProps) => {
   );
 
   function updateQuantity(menuItemId: string, nextQuantity: number) {
+    if (!restaurant?.isOpen) {
+      showToast("This restaurant is currently closed", "error");
+      return;
+    }
+
     setSelectedQuantities((current) => {
       const quantity = Math.max(0, Math.min(20, nextQuantity));
 
@@ -138,9 +147,31 @@ const RestaurantDetailsClient = ({ restaurantId }: RestaurantDetailsProps) => {
     });
   }
 
-  function addCustomComboToCart() {
+  async function addCustomComboToCart() {
     if (!restaurant || selectedItems.length === 0) {
       showToast("Please select at least one food item", "error");
+      return;
+    }
+
+    if (!restaurant.isOpen) {
+      showToast("This restaurant is currently closed", "error");
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/customer/restaurants/${restaurantId}`, {
+        credentials: "include",
+        cache: "no-store",
+      });
+      if (!response.ok) throw new Error();
+      const latest = (await response.json()) as { restaurant: RestaurantDetails };
+      setRestaurant(latest.restaurant);
+      if (!latest.restaurant.isOpen) {
+        showToast("This restaurant has just closed. Your items were not added.", "error");
+        return;
+      }
+    } catch {
+      showToast("Unable to confirm the restaurant is open. Please try again.", "error");
       return;
     }
 
@@ -228,6 +259,10 @@ const RestaurantDetailsClient = ({ restaurantId }: RestaurantDetailsProps) => {
           </div>
         ) : null}
 
+        <div className={`absolute left-4 top-4 rounded-full px-3 py-1.5 text-xs font-semibold text-white ${restaurant.isOpen ? "bg-emerald-600" : "bg-red-600"}`}>
+          {restaurant.availabilityLabel}
+        </div>
+
         <div className="absolute bottom-4 left-4 right-4 text-white">
           <h1 className="text-2xl font-semibold">{restaurant.name}</h1>
           <div className="mt-3 flex flex-wrap gap-3 text-[12px]">
@@ -238,6 +273,11 @@ const RestaurantDetailsClient = ({ restaurantId }: RestaurantDetailsProps) => {
       </section>
 
       <section className="mt-5 rounded-3xl bg-white p-5 shadow-sm">
+        {!restaurant.isOpen ? (
+          <div className="mb-4 rounded-2xl border border-red-100 bg-red-50 p-4 text-sm text-red-700">
+            This restaurant is currently closed. Ordering hours are {restaurant.openingTime ?? "not available"}{restaurant.closingTime ? ` to ${restaurant.closingTime}` : ""}.
+          </div>
+        ) : null}
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-sm leading-6 text-[#6B6B6B]">
@@ -369,7 +409,7 @@ const RestaurantDetailsClient = ({ restaurantId }: RestaurantDetailsProps) => {
             </div>
             <button
               type="button"
-              onClick={addCustomComboToCart}
+              onClick={() => void addCustomComboToCart()}
               className="rounded-2xl bg-[#DFB400] px-5 py-3 text-sm font-semibold text-white"
             >
               Add custom combo

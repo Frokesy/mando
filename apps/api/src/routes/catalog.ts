@@ -3,6 +3,7 @@ import { and, asc, eq, ilike, inArray, notInArray, or, sql } from 'drizzle-orm'
 
 import { getCurrentSessionContext } from '../auth/current-session.js'
 import { database } from '../db/client.js'
+import { getRestaurantAvailability } from '../restaurants/availability.js'
 import {
   addresses,
   adminSettings,
@@ -10,6 +11,7 @@ import {
   combos,
   menuItems,
   orderReviews,
+  restaurantOperations,
   restaurants,
   serviceAreas,
 } from '../db/schema.js'
@@ -217,12 +219,16 @@ function getRestaurantRows(
         city: serviceAreas.city,
         state: serviceAreas.state,
       },
+      openingTime: restaurantOperations.openingTime,
+      closingTime: restaurantOperations.closingTime,
+      openDays: restaurantOperations.openDays,
     })
     .from(restaurants)
     .innerJoin(serviceAreas, eq(restaurants.serviceAreaId, serviceAreas.id))
+    .leftJoin(restaurantOperations, eq(restaurantOperations.restaurantId, restaurants.id))
     .leftJoin(orderReviews, eq(orderReviews.restaurantId, restaurants.id))
     .where(and(...conditions))
-    .groupBy(restaurants.id, serviceAreas.id)
+    .groupBy(restaurants.id, serviceAreas.id, restaurantOperations.restaurantId)
     .orderBy(asc(restaurants.name))
 }
 
@@ -241,9 +247,13 @@ async function getCombosForRestaurants(restaurantIds: string[]) {
       restaurantSlug: restaurants.slug,
       ratingAverage: sql<number>`coalesce(round(avg(${orderReviews.rating})::numeric, 1), 0)`,
       reviewCount: sql<number>`count(${orderReviews.id})::int`,
+      openingTime: restaurantOperations.openingTime,
+      closingTime: restaurantOperations.closingTime,
+      openDays: restaurantOperations.openDays,
     })
     .from(combos)
     .innerJoin(restaurants, eq(combos.restaurantId, restaurants.id))
+    .leftJoin(restaurantOperations, eq(restaurantOperations.restaurantId, restaurants.id))
     .leftJoin(orderReviews, eq(orderReviews.restaurantId, restaurants.id))
     .where(
       and(
@@ -251,7 +261,7 @@ async function getCombosForRestaurants(restaurantIds: string[]) {
         inArray(combos.restaurantId, restaurantIds),
       ),
     )
-    .groupBy(combos.id, restaurants.id)
+    .groupBy(combos.id, restaurants.id, restaurantOperations.restaurantId)
     .orderBy(asc(combos.name))
 }
 
@@ -329,12 +339,16 @@ function getComboRows(
       restaurantSlug: restaurants.slug,
       ratingAverage: sql<number>`coalesce(round(avg(${orderReviews.rating})::numeric, 1), 0)`,
       reviewCount: sql<number>`count(${orderReviews.id})::int`,
+      openingTime: restaurantOperations.openingTime,
+      closingTime: restaurantOperations.closingTime,
+      openDays: restaurantOperations.openDays,
     })
     .from(combos)
     .innerJoin(restaurants, eq(combos.restaurantId, restaurants.id))
+    .leftJoin(restaurantOperations, eq(restaurantOperations.restaurantId, restaurants.id))
     .leftJoin(orderReviews, eq(orderReviews.restaurantId, restaurants.id))
     .where(and(...conditions))
-    .groupBy(combos.id, restaurants.id)
+    .groupBy(combos.id, restaurants.id, restaurantOperations.restaurantId)
     .orderBy(asc(restaurants.name), asc(combos.name))
 }
 
@@ -371,6 +385,8 @@ function serializeRestaurantSummary(
     null,
   )
 
+  const availability = getRestaurantAvailability(restaurant)
+
   return {
     id: restaurant.id,
     slug: restaurant.slug,
@@ -385,12 +401,18 @@ function serializeRestaurantSummary(
     ratingAverage: Number(restaurant.ratingAverage),
     reviewCount: Number(restaurant.reviewCount),
     serviceArea: restaurant.serviceArea,
+    openingTime: restaurant.openingTime,
+    closingTime: restaurant.closingTime,
+    isOpen: availability.isOpen,
+    availabilityLabel: availability.status,
   }
 }
 
 function serializeComboSummary(
   combo: ComboSummary,
 ) {
+  const availability = getRestaurantAvailability(combo)
+
   return {
     id: combo.id,
     slug: combo.slug,
@@ -405,7 +427,8 @@ function serializeComboSummary(
       id: combo.restaurantId,
       name: combo.restaurantName,
       slug: combo.restaurantSlug,
+      isOpen: availability.isOpen,
+      availabilityLabel: availability.status,
     },
   }
 }
-
