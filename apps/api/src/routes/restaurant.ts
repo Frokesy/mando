@@ -11,6 +11,7 @@ import {
 import { getCurrentSessionContext } from '../auth/current-session.js'
 import { database } from '../db/client.js'
 import { saveRestaurantPayoutAccount } from '../finance/payout-accounts.js'
+import { createAllocatedPayoutRequest } from '../finance/payout-lifecycle.js'
 import {
   authSessions,
   orderIssues,
@@ -422,45 +423,19 @@ export async function restaurantRoutes(app: FastifyInstance) {
       })
     }
 
-    const availableEarnings = await getAvailableRestaurantEarnings(
-      context.restaurant.id,
-    )
-    const amount = availableEarnings.reduce(
-      (total, earning) => total + earning.netAmount,
-      0,
-    )
+    const payoutRequest = await createAllocatedPayoutRequest({
+      type: 'restaurant_earnings',
+      requestedByUserId: context.userId,
+      restaurantId: context.restaurant.id,
+      payoutAccountId: payoutAccount.id,
+    })
 
-    if (amount <= 0) {
+    if (!payoutRequest) {
       return reply.status(409).send({
         error: 'no_available_payout',
         message: 'There are no available earnings to request.',
       })
     }
-
-    const [payoutRequest] = await database.transaction(async (tx) => {
-      const [requestRow] = await tx
-        .insert(payoutRequests)
-        .values({
-          requestedByUserId: context.userId,
-          restaurantId: context.restaurant.id,
-          type: 'restaurant_earnings',
-          payoutAccountId: payoutAccount.id,
-          amount,
-        })
-        .returning()
-
-      await tx
-        .update(restaurantEarnings)
-        .set({ status: 'requested', updatedAt: new Date() })
-        .where(
-          and(
-            eq(restaurantEarnings.restaurantId, context.restaurant.id),
-            eq(restaurantEarnings.status, 'available'),
-          ),
-        )
-
-      return [requestRow]
-    })
 
     return reply.status(201).send({ payoutRequest })
   })

@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply } from 'fastify'
-import { and, desc, eq, inArray, lt } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, lt } from 'drizzle-orm'
 import { z } from 'zod'
 
 import { getCurrentSessionContext } from '../auth/current-session.js'
@@ -12,6 +12,7 @@ import {
 import { database } from '../db/client.js'
 import { canQualifyReferralFromDeliveredOrder } from '../finance/earnings.js'
 import { saveUserPayoutAccount } from '../finance/payout-accounts.js'
+import { createAllocatedPayoutRequest } from '../finance/payout-lifecycle.js'
 import {
   authSessions,
   commissions,
@@ -21,7 +22,9 @@ import {
   orderStatusEvents,
   orders,
   payoutAccounts,
+  payoutItems,
   payoutRequests,
+  payouts,
   profiles,
   referrals,
   restaurantEarnings,
@@ -287,6 +290,7 @@ export async function riderRoutes(app: FastifyInstance) {
             (total, delivery) => total + delivery.riderEarningAmount,
             0,
           ),
+          availableBalanceAmount: await getAvailableRiderPayoutAmount(auth.userId),
           activeDeliveryCount: activeDeliveries.length,
           availablePickupCount: availablePickups.length,
           completedDeliveryCount: recentDeliveries.length,
@@ -386,32 +390,26 @@ export async function riderRoutes(app: FastifyInstance) {
       })
     }
 
-    const amount = await getAvailableRiderPayoutAmount(auth.userId)
+    const payoutRequest = await createAllocatedPayoutRequest({
+      type: 'rider_earnings',
+      requestedByUserId: auth.userId,
+      userId: auth.userId,
+      payoutAccountId: payoutAccount.id,
+    })
 
-    if (amount <= 0) {
+    if (!payoutRequest) {
       return reply.status(409).send({
         error: 'no_available_payout',
         message: 'There are no available rider earnings to request.',
       })
     }
 
-    const [payoutRequest] = await database
-      .insert(payoutRequests)
-      .values({
-        requestedByUserId: auth.userId,
-        userId: auth.userId,
-        type: 'rider_earnings',
-        payoutAccountId: payoutAccount.id,
-        amount,
-      })
-      .returning()
-
     await database.insert(notifications).values({
       userId: auth.userId,
       type: 'rider_payout_requested',
       title: 'Payout request sent',
-      body: `Your ${formatMoney(amount)} rider payout request has been sent to admin.`,
-      data: { payoutRequestId: payoutRequest.id, amount },
+      body: `Your ${formatMoney(payoutRequest.amount)} rider payout request has been sent to admin.`,
+      data: { payoutRequestId: payoutRequest.id, amount: payoutRequest.amount },
     })
 
     return reply.status(201).send({ payoutRequest })
@@ -495,6 +493,7 @@ async function updateDeliveryAssignment(
     })
     .from(deliveries)
     .innerJoin(orders, eq(deliveries.orderId, orders.id))
+    .leftJoin(payoutItems, eq(payoutItems.deliveryId, deliveries.id))
     .where(eq(orders.id, parsedParams.data.orderId))
     .limit(1)
 
@@ -970,6 +969,7 @@ async function listDeliveryHistory(riderId: string, limit: number) {
         eq(deliveries.riderId, riderId),
         eq(deliveries.status, 'delivered'),
         eq(orders.status, 'delivered'),
+        isNull(payoutItems.id),
       ),
     )
     .orderBy(desc(deliveries.deliveredAt))
@@ -1066,8 +1066,9 @@ async function getAvailableRiderPayoutAmount(userId: string) {
     )
 
   const requestedRows = await database
-    .select({ amount: payoutRequests.amount })
+    .select({ amount: payoutRequests.amount, payoutId: payouts.id })
     .from(payoutRequests)
+    .leftJoin(payouts, eq(payouts.payoutRequestId, payoutRequests.id))
     .where(
       and(
         eq(payoutRequests.userId, userId),
@@ -1087,7 +1088,7 @@ async function getAvailableRiderPayoutAmount(userId: string) {
     0,
   )
   const requestedAmount = requestedRows.reduce(
-    (total, row) => total + row.amount,
+    (total, row) => total + (row.payoutId ? 0 : row.amount),
     0,
   )
 

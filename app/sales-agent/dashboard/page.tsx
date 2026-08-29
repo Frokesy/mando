@@ -47,6 +47,7 @@ type SalesDashboard = {
     directCommissionAmount?: number;
     downlineCommissionAmount?: number;
     totalCommissionAmount: number;
+    availableBalanceAmount: number;
     influencerThreshold: number;
     remainingOrdersToInfluencer: number;
   };
@@ -196,6 +197,11 @@ export default function SalesAgentDashboard() {
 
         <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <StatCard
+            label="Available Mando balance"
+            value={formatCurrency(dashboard?.stats.availableBalanceAmount ?? 0)}
+            helper="What you can currently request for payout"
+          />
+          <StatCard
             label="Direct first-order commission"
             value={formatCurrency(dashboard?.stats.directCommissionAmount ?? dashboard?.stats.totalCommissionAmount ?? 0)}
             helper="Commission earned from customers' qualifying first purchases"
@@ -217,9 +223,9 @@ export default function SalesAgentDashboard() {
             />
           ) : null}
           <StatCard
-            label="Total commission"
+            label="Lifetime commission earned"
             value={formatCurrency(dashboard?.stats.totalCommissionAmount ?? 0)}
-            helper="Direct and downline commission combined"
+            helper="Includes commission already withdrawn"
           />
           <StatCard
             label="All referral-link orders"

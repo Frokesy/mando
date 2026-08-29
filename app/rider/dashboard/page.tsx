@@ -59,6 +59,7 @@ type RiderDashboardData = {
   };
   stats: {
     totalEarningsAmount: number;
+    availableBalanceAmount: number;
     activeDeliveryCount: number;
     availablePickupCount: number;
     completedDeliveryCount: number;
@@ -106,7 +107,8 @@ export default function RiderDashboard() {
   }, [router, showToast]);
 
   useEffect(() => {
-    void loadDashboard();
+    const initialLoad = window.setTimeout(() => void loadDashboard(), 0);
+    return () => window.clearTimeout(initialLoad);
   }, [loadDashboard]);
 
   const runAction = async (key: string, request: () => Promise<Response>) => {
@@ -274,9 +276,16 @@ export default function RiderDashboard() {
 
         <section className="mb-6 grid gap-4 sm:grid-cols-2">
           <div className="rounded-[28px] border border-gray-200 bg-white p-5 shadow-sm">
+            <p className="text-sm text-[#6B6B6B]">Available Mando balance</p>
+            <p className="mt-2 text-3xl font-bold text-[#141B34]">
+              {formatCurrency(dashboard?.stats.availableBalanceAmount ?? 0)}
+            </p>
+            <p className="mt-4 text-sm text-[#A4A4A4]">What you can currently request for payout</p>
+          </div>
+          <div className="rounded-[28px] border border-gray-200 bg-white p-5 shadow-sm">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <p className="text-sm text-[#6B6B6B]">Total earnings</p>
+                <p className="text-sm text-[#6B6B6B]">Recent delivery earnings</p>
                 <p className="mt-2 text-3xl font-bold text-[#141B34]">
                   {formatCurrency(dashboard?.stats.totalEarningsAmount ?? 0)}
                 </p>
@@ -517,5 +526,3 @@ function formatDate(value: string) {
     year: "numeric",
   }).format(new Date(value));
 }
-
-

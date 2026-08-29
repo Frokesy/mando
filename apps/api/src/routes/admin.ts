@@ -13,6 +13,7 @@ import {
 import { getCurrentSessionContext } from '../auth/current-session.js'
 import { database } from '../db/client.js'
 import { isRealizedCommissionStatus } from '../finance/earnings.js'
+import { reviewAllocatedPayoutRequest } from '../finance/payout-lifecycle.js'
 import { isValidOpenDaysExpression } from '../restaurants/availability.js'
 import {
   decryptPayoutAccountNumber,
@@ -793,20 +794,11 @@ export async function adminRoutes(app: FastifyInstance) {
       })
     }
 
-    const [updatedRequest] = await database
-      .update(payoutRequests)
-      .set({
-        status: parsedBody.data.status,
-        reviewedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(payoutRequests.id, parsedParams.data.requestId),
-          eq(payoutRequests.type, 'rider_earnings'),
-        ),
-      )
-      .returning({ id: payoutRequests.id, status: payoutRequests.status })
+    const updatedRequest = await reviewAllocatedPayoutRequest(
+      parsedParams.data.requestId,
+      'rider_earnings',
+      parsedBody.data.status,
+    )
 
     if (!updatedRequest) {
       return reply.status(404).send({
@@ -1016,15 +1008,11 @@ export async function adminRoutes(app: FastifyInstance) {
       })
     }
 
-    const [updatedRequest] = await database
-      .update(payoutRequests)
-      .set({
-        status: parsedBody.data.status,
-        reviewedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(payoutRequests.id, parsedParams.data.requestId))
-      .returning({ id: payoutRequests.id, status: payoutRequests.status })
+    const updatedRequest = await reviewAllocatedPayoutRequest(
+      parsedParams.data.requestId,
+      'restaurant_earnings',
+      parsedBody.data.status,
+    )
 
     if (!updatedRequest) {
       return reply.status(404).send({
@@ -1718,25 +1706,11 @@ export async function adminRoutes(app: FastifyInstance) {
       })
     }
 
-    const [updatedRequest] = await database
-      .update(payoutRequests)
-      .set({
-        status: body.data.status,
-        reviewedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(payoutRequests.id, params.data.requestId),
-          eq(payoutRequests.type, 'agent_commissions'),
-          inArray(payoutRequests.status, ['pending', 'under_review']),
-        ),
-      )
-      .returning({
-        id: payoutRequests.id,
-        userId: payoutRequests.userId,
-        status: payoutRequests.status,
-      })
+    const updatedRequest = await reviewAllocatedPayoutRequest(
+      params.data.requestId,
+      'agent_commissions',
+      body.data.status,
+    )
 
     if (!updatedRequest) {
       return reply.status(404).send({
@@ -4101,7 +4075,6 @@ export function chooseRestaurantManager(
   return (
     members.find((member) => member.status === 'active' && member.membershipRole === 'owner') ??
     members.find((member) => member.status === 'active' && member.membershipRole === 'manager') ??
-    members[0] ??
     null
   )
 }

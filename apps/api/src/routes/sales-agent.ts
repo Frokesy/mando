@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import { randomBytes } from 'node:crypto'
-import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm'
 import { z } from 'zod'
 
 import { getCurrentSessionContext } from '../auth/current-session.js'
@@ -14,6 +14,7 @@ import {
 import { buildWebUrl } from '../config/web-url.js'
 import { database } from '../db/client.js'
 import { saveUserPayoutAccount } from '../finance/payout-accounts.js'
+import { createAllocatedPayoutRequest } from '../finance/payout-lifecycle.js'
 import { sendAgentCredentialsEmail } from '../email/agent-credentials.js'
 import {
   authSessions,
@@ -23,7 +24,9 @@ import {
   notifications,
   orders,
   payoutAccounts,
+  payoutItems,
   payoutRequests,
+  payouts,
   profiles,
   referrals,
   restaurants,
@@ -468,32 +471,26 @@ export async function salesAgentRoutes(app: FastifyInstance) {
       })
     }
 
-    const amount = await getAvailableAgentPayoutAmount(auth.userId)
+    const payoutRequest = await createAllocatedPayoutRequest({
+      type: 'agent_commissions',
+      requestedByUserId: auth.userId,
+      userId: auth.userId,
+      payoutAccountId: payoutAccount.id,
+    })
 
-    if (amount <= 0) {
+    if (!payoutRequest) {
       return reply.status(409).send({
         error: 'no_available_payout',
         message: 'There are no available commissions to request.',
       })
     }
 
-    const [payoutRequest] = await database
-      .insert(payoutRequests)
-      .values({
-        requestedByUserId: auth.userId,
-        userId: auth.userId,
-        type: 'agent_commissions',
-        payoutAccountId: payoutAccount.id,
-        amount,
-      })
-      .returning()
-
     await database.insert(notifications).values({
       userId: auth.userId,
       type: 'agent_payout_requested',
       title: 'Payout request sent',
-      body: `Your ${formatMoney(amount)} commission payout request has been sent to admin.`,
-      data: { payoutRequestId: payoutRequest.id, amount },
+      body: `Your ${formatMoney(payoutRequest.amount)} commission payout request has been sent to admin.`,
+      data: { payoutRequestId: payoutRequest.id, amount: payoutRequest.amount },
     })
 
     return reply.status(201).send({ payoutRequest })
@@ -709,6 +706,7 @@ async function getSalesAgentStats(userId: string) {
     directCommissionAmount,
     downlineCommissionAmount,
     totalCommissionAmount,
+    availableBalanceAmount: await getAvailableAgentPayoutAmount(userId),
     influencerThreshold: 10,
     remainingOrdersToInfluencer: Math.max(10 - deliveredOrders.length, 0),
     recentOrders: firstPurchaseOrders.slice(0, 10),
@@ -906,16 +904,19 @@ async function getAvailableAgentPayoutAmount(userId: string) {
   const commissionRows = await database
     .select({ commissionAmount: commissions.commissionAmount })
     .from(commissions)
+    .leftJoin(payoutItems, eq(payoutItems.commissionId, commissions.id))
     .where(
       and(
         eq(commissions.salesAgentId, userId),
         inArray(commissions.status, ['earned', 'approved']),
+        isNull(payoutItems.id),
       ),
     )
 
   const requestedRows = await database
-    .select({ amount: payoutRequests.amount })
+    .select({ amount: payoutRequests.amount, payoutId: payouts.id })
     .from(payoutRequests)
+    .leftJoin(payouts, eq(payouts.payoutRequestId, payoutRequests.id))
     .where(
       and(
         eq(payoutRequests.userId, userId),
@@ -935,7 +936,7 @@ async function getAvailableAgentPayoutAmount(userId: string) {
     0,
   )
   const requestedAmount = requestedRows.reduce(
-    (total, request) => total + request.amount,
+    (total, request) => total + (request.payoutId ? 0 : request.amount),
     0,
   )
 

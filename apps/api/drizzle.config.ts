@@ -1,14 +1,9 @@
 import 'dotenv/config'
 
 import { defineConfig } from 'drizzle-kit'
+import { resolveDatabaseUrl } from './src/config/database-url.js'
 
-const databaseUrl = process.env.DATABASE_URL
-
-if (!databaseUrl) {
-  throw new Error(
-    'DATABASE_URL is missing. Add it to apps/api/.env before using Drizzle.',
-  )
-}
+const databaseUrl = resolveDatabaseUrl()
 
 export default defineConfig({
   dialect: 'postgresql',

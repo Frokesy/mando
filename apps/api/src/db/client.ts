@@ -1,13 +1,8 @@
 import { drizzle } from 'drizzle-orm/node-postgres'
 import { Pool } from 'pg'
+import { resolveDatabaseUrl } from '../config/database-url.js'
 
-const databaseUrl = process.env.DATABASE_URL
-
-if (!databaseUrl) {
-  throw new Error(
-    'DATABASE_URL is missing. Add it to apps/api/.env before starting the API.',
-  )
-}
+const databaseUrl = resolveDatabaseUrl()
 
 export const databasePool = new Pool({
   connectionString: databaseUrl,
