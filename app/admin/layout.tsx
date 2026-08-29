@@ -1,4 +1,10 @@
+import type { Metadata } from "next";
 import type { ReactNode } from "react";
+
+export const metadata: Metadata = {
+  manifest: "/manifest-admin.webmanifest",
+  appleWebApp: { capable: true, title: "Mando Admin", statusBarStyle: "default" },
+};
 
 const AdminLayout = ({ children }: { children: ReactNode }) => {
   return (

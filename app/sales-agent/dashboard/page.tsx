@@ -42,7 +42,6 @@ type SalesDashboard = {
     successfulOrderCount: number;
     firstPurchaseCount?: number;
     totalReferralOrderCount?: number;
-    firstPurchaseRevenueAmount?: number;
     trackedRevenueAmount: number;
     directCommissionAmount?: number;
     downlineCommissionAmount?: number;
@@ -231,11 +230,6 @@ export default function SalesAgentDashboard() {
             label="All referral-link orders"
             value={`${dashboard?.stats.totalReferralOrderCount ?? dashboard?.stats.successfulOrderCount ?? 0}`}
             helper={`Total order value ${formatCurrency(dashboard?.stats.trackedRevenueAmount ?? 0)}`}
-          />
-          <StatCard
-            label="First-purchase order value"
-            value={formatCurrency(dashboard?.stats.firstPurchaseRevenueAmount ?? dashboard?.stats.trackedRevenueAmount ?? 0)}
-            helper="Gross value of qualifying first purchases, not your commission"
           />
         </div>
 

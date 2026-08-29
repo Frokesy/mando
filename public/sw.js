@@ -1,5 +1,14 @@
-const CACHE_NAME = 'mando-cache-v2';
-const URLS_TO_CACHE = ['/manifest.webmanifest', '/ad.png', '/dummy-img.jpg'];
+const CACHE_NAME = 'mando-cache-v3';
+const URLS_TO_CACHE = [
+  '/manifest.webmanifest',
+  '/manifest-customer.webmanifest',
+  '/manifest-sales-agent.webmanifest',
+  '/manifest-rider.webmanifest',
+  '/manifest-restaurant.webmanifest',
+  '/manifest-admin.webmanifest',
+  '/ad.png',
+  '/dummy-img.jpg',
+];
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();

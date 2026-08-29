@@ -1,7 +1,9 @@
 {
   "name": "Mando",
   "short_name": "Mando",
-  "start_url": "/",
+  "id": "/pwa",
+  "start_url": "/pwa",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#ffffff",

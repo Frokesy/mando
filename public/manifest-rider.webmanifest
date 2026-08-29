@@ -1,0 +1,15 @@
+{
+  "id": "/pwa/rider",
+  "name": "Mando Rider",
+  "short_name": "Mando Rider",
+  "description": "Manage Mando deliveries, earnings, and payouts.",
+  "start_url": "/pwa/rider",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#DFB400",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
