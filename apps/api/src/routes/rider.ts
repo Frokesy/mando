@@ -969,7 +969,6 @@ async function listDeliveryHistory(riderId: string, limit: number) {
         eq(deliveries.riderId, riderId),
         eq(deliveries.status, 'delivered'),
         eq(orders.status, 'delivered'),
-        isNull(payoutItems.id),
       ),
     )
     .orderBy(desc(deliveries.deliveredAt))
@@ -1057,11 +1056,13 @@ async function getAvailableRiderPayoutAmount(userId: string) {
     .select({ riderEarningAmount: deliveries.riderEarningAmount })
     .from(deliveries)
     .innerJoin(orders, eq(deliveries.orderId, orders.id))
+    .leftJoin(payoutItems, eq(payoutItems.deliveryId, deliveries.id))
     .where(
       and(
         eq(deliveries.riderId, userId),
         eq(deliveries.status, 'delivered'),
         eq(orders.status, 'delivered'),
+        isNull(payoutItems.id),
       ),
     )
 
