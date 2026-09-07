@@ -16,6 +16,7 @@ import { database } from '../db/client.js'
 import { saveUserPayoutAccount } from '../finance/payout-accounts.js'
 import { createAllocatedPayoutRequest } from '../finance/payout-lifecycle.js'
 import { sendAgentCredentialsEmail } from '../email/agent-credentials.js'
+import { notifyActiveAdmins } from '../notifications/admin.js'
 import {
   authSessions,
   comboCampaigns,
@@ -492,6 +493,13 @@ export async function salesAgentRoutes(app: FastifyInstance) {
       body: `Your ${formatMoney(payoutRequest.amount)} commission payout request has been sent to admin.`,
       data: { payoutRequestId: payoutRequest.id, amount: payoutRequest.amount },
     })
+
+    void notifyActiveAdmins({
+      type: 'admin_agent_payout_requested',
+      title: 'Sales-agent payout requested',
+      body: `${formatMoney(payoutRequest.amount)} is awaiting review.`,
+      data: { payoutRequestId: payoutRequest.id, url: '/admin/dashboard/sales/withdrawals' },
+    }).catch((error) => request.log.error(error, 'Unable to notify admins about agent payout'))
 
     return reply.status(201).send({ payoutRequest })
   })

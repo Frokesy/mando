@@ -13,6 +13,7 @@ import { database } from '../db/client.js'
 import { canQualifyReferralFromDeliveredOrder } from '../finance/earnings.js'
 import { saveUserPayoutAccount } from '../finance/payout-accounts.js'
 import { createAllocatedPayoutRequest } from '../finance/payout-lifecycle.js'
+import { notifyActiveAdmins } from '../notifications/admin.js'
 import {
   authSessions,
   commissions,
@@ -411,6 +412,13 @@ export async function riderRoutes(app: FastifyInstance) {
       body: `Your ${formatMoney(payoutRequest.amount)} rider payout request has been sent to admin.`,
       data: { payoutRequestId: payoutRequest.id, amount: payoutRequest.amount },
     })
+
+    void notifyActiveAdmins({
+      type: 'admin_rider_payout_requested',
+      title: 'Rider payout requested',
+      body: `${formatMoney(payoutRequest.amount)} is awaiting review.`,
+      data: { payoutRequestId: payoutRequest.id, url: '/admin/dashboard/riders/commissions' },
+    }).catch((error) => request.log.error(error, 'Unable to notify admins about rider payout'))
 
     return reply.status(201).send({ payoutRequest })
   })

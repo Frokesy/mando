@@ -12,6 +12,7 @@ import { getCurrentSessionContext } from '../auth/current-session.js'
 import { database } from '../db/client.js'
 import { saveRestaurantPayoutAccount } from '../finance/payout-accounts.js'
 import { createAllocatedPayoutRequest } from '../finance/payout-lifecycle.js'
+import { notifyActiveAdmins } from '../notifications/admin.js'
 import {
   authSessions,
   orderIssues,
@@ -437,6 +438,13 @@ export async function restaurantRoutes(app: FastifyInstance) {
       })
     }
 
+    void notifyActiveAdmins({
+      type: 'admin_restaurant_payout_requested',
+      title: 'Restaurant payout requested',
+      body: `${context.restaurant.name} requested a ${formatMoney(payoutRequest.amount)} payout.`,
+      data: { payoutRequestId: payoutRequest.id, url: '/admin/dashboard/vendors/commissions' },
+    }).catch((error) => request.log.error(error, 'Unable to notify admins about restaurant payout'))
+
     return reply.status(201).send({ payoutRequest })
   })
 }
@@ -752,6 +760,14 @@ function sendNotificationNotFound(reply: FastifyReply) {
     error: 'notification_not_found',
     message: 'Notification not found.',
   })
+}
+
+function formatMoney(amount: number) {
+  return new Intl.NumberFormat('en-NG', {
+    style: 'currency',
+    currency: 'NGN',
+    maximumFractionDigits: 0,
+  }).format(amount)
 }
 
 function sendInvalidLogin(reply: FastifyReply) {

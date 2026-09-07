@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mando-cache-v3';
+const CACHE_NAME = 'mando-cache-v4';
 const URLS_TO_CACHE = [
   '/manifest.webmanifest',
   '/manifest-customer.webmanifest',
@@ -37,6 +37,7 @@ self.addEventListener('fetch', (event) => {
   if (
     event.request.method !== 'GET' ||
     requestUrl.pathname.startsWith('/api') ||
+    requestUrl.pathname.startsWith('/_next/') ||
     requestUrl.hostname === 'localhost' && requestUrl.port === '4000'
   ) {
     return;
@@ -49,21 +50,14 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  event.respondWith(
-    caches.match(event.request).then((response) => {
-      if (response) return response;
-
-      return fetch(event.request).then((networkResponse) => {
-        if (!networkResponse || networkResponse.status !== 200) {
-          return networkResponse;
-        }
-
-        const responseClone = networkResponse.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseClone));
-        return networkResponse;
-      });
-    })
-  );
+  // Only the explicitly precached PWA assets are cache-first. Application
+  // scripts and data remain network-managed so deployments cannot be pinned
+  // to an old Next.js bundle.
+  if (URLS_TO_CACHE.includes(requestUrl.pathname)) {
+    event.respondWith(
+      caches.match(event.request).then((response) => response || fetch(event.request))
+    );
+  }
 });
 
 self.addEventListener('push', (event) => {

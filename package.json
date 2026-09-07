@@ -8,6 +8,7 @@
   ],
   "scripts": {
     "dev": "next dev --webpack",
+    "dev:local": "node scripts/dev-local.mjs",
     "dev:web": "next dev --webpack",
     "dev:api": "npm run dev -w apps/api",
     "build": "next build",

@@ -367,6 +367,13 @@ const promoRulesBodySchema = z.object({
   rules: z.string().trim().min(1),
 })
 
+const adminNotificationParamsSchema = z.object({ notificationId: z.uuid() })
+const adminNotificationQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(25),
+  status: z.enum(['all', 'unread', 'read']).default('all'),
+})
+
 export async function adminRoutes(app: FastifyInstance) {
   app.addHook('preHandler', async (request, reply) => {
     if (
@@ -455,6 +462,79 @@ export async function adminRoutes(app: FastifyInstance) {
         },
         roles: ['admin'],
       })
+  })
+
+  app.get('/notifications', async (request, reply) => {
+    const auth = await requireAdmin(request.headers.cookie, reply)
+    if (!auth) return
+    const query = adminNotificationQuerySchema.safeParse(request.query)
+    if (!query.success) return reply.status(400).send({ error: 'validation_error', message: 'Choose valid notification filters.' })
+
+    const adminTypeCondition = or(ilike(notifications.type, 'admin\_%'), eq(notifications.type, 'push_enabled'))
+    const statusCondition = query.data.status === 'unread'
+      ? sql`${notifications.readAt} is null`
+      : query.data.status === 'read'
+        ? sql`${notifications.readAt} is not null`
+        : undefined
+    const whereCondition = statusCondition
+      ? and(eq(notifications.userId, auth.userId), adminTypeCondition, statusCondition)
+      : and(eq(notifications.userId, auth.userId), adminTypeCondition)
+    const offset = (query.data.page - 1) * query.data.limit
+
+    const [rows, countRows, unreadRows] = await Promise.all([
+      database.select({
+        id: notifications.id,
+        type: notifications.type,
+        title: notifications.title,
+        body: notifications.body,
+        data: notifications.data,
+        readAt: notifications.readAt,
+        createdAt: notifications.createdAt,
+      }).from(notifications).where(whereCondition).orderBy(desc(notifications.createdAt))
+        .limit(query.data.limit).offset(offset),
+      database.select({ count: sql<number>`count(*)::int` }).from(notifications).where(whereCondition),
+      database.select({ count: sql<number>`count(*)::int` }).from(notifications).where(and(
+        eq(notifications.userId, auth.userId),
+        adminTypeCondition,
+        sql`${notifications.readAt} is null`,
+      )),
+    ])
+    const total = countRows[0]?.count ?? 0
+    return reply.status(200).send({
+      notifications: rows,
+      unreadCount: unreadRows[0]?.count ?? 0,
+      pagination: {
+        page: query.data.page,
+        limit: query.data.limit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / query.data.limit)),
+      },
+    })
+  })
+
+  app.patch('/notifications/:notificationId/read', async (request, reply) => {
+    const auth = await requireAdmin(request.headers.cookie, reply)
+    if (!auth) return
+    const params = adminNotificationParamsSchema.safeParse(request.params)
+    if (!params.success) return reply.status(400).send({ error: 'validation_error', message: 'Choose a valid notification.' })
+    const [notification] = await database.update(notifications).set({ readAt: new Date() }).where(and(
+      eq(notifications.id, params.data.notificationId),
+      eq(notifications.userId, auth.userId),
+      or(ilike(notifications.type, 'admin\_%'), eq(notifications.type, 'push_enabled')),
+    )).returning({ id: notifications.id, readAt: notifications.readAt })
+    if (!notification) return reply.status(404).send({ error: 'notification_not_found', message: 'Notification not found.' })
+    return reply.status(200).send({ notification })
+  })
+
+  app.post('/notifications/read-all', async (request, reply) => {
+    const auth = await requireAdmin(request.headers.cookie, reply)
+    if (!auth) return
+    await database.update(notifications).set({ readAt: new Date() }).where(and(
+      eq(notifications.userId, auth.userId),
+      or(ilike(notifications.type, 'admin\_%'), eq(notifications.type, 'push_enabled')),
+      sql`${notifications.readAt} is null`,
+    ))
+    return reply.status(204).send()
   })
 
   app.get('/overview', async (request, reply) => {

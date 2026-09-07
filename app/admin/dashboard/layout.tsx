@@ -20,6 +20,7 @@ import {
 } from "@/components/svgs/AdminIcons";
 import { NotificationIcon } from "@/components/svgs/DefaultIcons";
 import Link from "next/link";
+import AdminNotificationBell from "@/components/AdminNotificationBell";
 
 const API_BASE_URL =
   (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000").replace(/\/+$/, "");
@@ -29,6 +30,8 @@ const AdminDashboardLayout = ({ children }: { children: React.ReactNode }) => {
   const pathname = usePathname() ?? "";
   const router = useRouter();
   const [checkingSession, setCheckingSession] = useState(true);
+  const [sessionUnavailable, setSessionUnavailable] = useState(false);
+  const [sessionRetry, setSessionRetry] = useState(0);
 
   useEffect(() => {
     let mounted = true;
@@ -38,6 +41,7 @@ const AdminDashboardLayout = ({ children }: { children: React.ReactNode }) => {
         const response = await fetch(`${API_BASE_URL}/auth/me`, {
           credentials: "include",
           cache: "no-store",
+          signal: AbortSignal.timeout(10_000),
         });
 
         if (!mounted) return;
@@ -48,8 +52,10 @@ const AdminDashboardLayout = ({ children }: { children: React.ReactNode }) => {
         }
 
         if (!response.ok) {
-          // A sleeping API or temporary database/network error is not a logout.
-          if (initialCheck) setCheckingSession(false);
+          if (initialCheck) {
+            setSessionUnavailable(true);
+            setCheckingSession(false);
+          }
           return;
         }
 
@@ -59,10 +65,13 @@ const AdminDashboardLayout = ({ children }: { children: React.ReactNode }) => {
           return;
         }
 
+        setSessionUnavailable(false);
         setCheckingSession(false);
       } catch {
-        // Keep the current session during transient connectivity failures.
-        if (mounted && initialCheck) setCheckingSession(false);
+        if (mounted && initialCheck) {
+          setSessionUnavailable(true);
+          setCheckingSession(false);
+        }
       }
     }
 
@@ -82,7 +91,7 @@ const AdminDashboardLayout = ({ children }: { children: React.ReactNode }) => {
       window.clearInterval(sessionCheckInterval);
       document.removeEventListener("visibilitychange", checkVisibleSession);
     };
-  }, [router]);
+  }, [router, sessionRetry]);
 
   const menuItems = [
     { id: 1, item: "Overview", icon: <OverviewIcon />, slug: "overview" },
@@ -165,6 +174,35 @@ const AdminDashboardLayout = ({ children }: { children: React.ReactNode }) => {
     );
   }
 
+  if (sessionUnavailable) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-100 px-6">
+        <div className="w-full max-w-md rounded-2xl bg-white p-6 text-center shadow-sm">
+          <h1 className="text-lg font-semibold text-[#101828]">Unable to verify admin session</h1>
+          <p className="mt-2 text-sm text-[#667085]">
+            The local API or database did not respond. Your browser is no longer stuck; retry after checking the backend connection.
+          </p>
+          <div className="mt-5 flex justify-center gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setSessionUnavailable(false);
+                setCheckingSession(true);
+                setSessionRetry((value) => value + 1);
+              }}
+              className="rounded-lg bg-[#101828] px-4 py-2 text-sm font-semibold text-white"
+            >
+              Retry
+            </button>
+            <Link href="/admin/login" className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-[#475467]">
+              Return to login
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex justify-between pl-8">
       <aside className="sticky top-0 h-screen w-[15%] overflow-y-auto overscroll-contain py-10 pr-4">
@@ -207,9 +245,7 @@ const AdminDashboardLayout = ({ children }: { children: React.ReactNode }) => {
               <RefreshIcon />
               <p>Auto Refresh: 30s</p>
             </div>
-            <div className="bg-[#FFB900] w-[28px] h-[28px] text-white flex items-center justify-center rounded-full">
-              <NotificationIcon size={16} />
-            </div>
+            <AdminNotificationBell />
             <div className="flex space-x-3">
               <div className="bg-[#FFB900] text-[#ffffff] w-[28px] h-[28px] flex items-center justify-center rounded-full">
                 SA

@@ -2,19 +2,20 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
-First, run the development server:
+Local development uses the API on this computer and the database configured in `apps/api/.env` (the dedicated test database). Browser requests still go through `/api`, preserving the same-origin cookie setup required by iPhones and installed PWAs.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm run dev:local
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+This starts both services:
+
+- Web app: [http://localhost:3000](http://localhost:3000)
+- API: [http://127.0.0.1:4000](http://127.0.0.1:4000)
+
+The committed `.env.local.example` documents the local proxy. Your ignored `.env.local` overrides any remote endpoint in the root `.env`. In development, `next.config.ts` also refuses to proxy to a remote API unless `ALLOW_REMOTE_API_IN_DEV=true` is deliberately set.
+
+Production continues to use the hosting provider's `API_PROXY_TARGET` and the backend deployment's main `DATABASE_URL`. Do not store the production database URL in `apps/api/.env`.
 
 ## Safe API testing
 
