@@ -37,6 +37,7 @@ export async function deliverPendingPushNotifications() {
     .where(and(
       isNull(pushDeliveries.notificationId),
       or(notIlike(notifications.type, 'admin\_%'), eq(pushSubscriptions.role, 'admin')),
+      or(notIlike(notifications.type, 'sales\_agent\_%'), eq(pushSubscriptions.role, 'sales_agent')),
     ))
     .orderBy(asc(notifications.createdAt))
     .limit(100)
