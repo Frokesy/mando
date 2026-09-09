@@ -1,7 +1,8 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import ConfirmationModal from "@/components/ConfirmationModal";
@@ -139,7 +140,7 @@ export default function ProfilePage() {
   const [showLogoutConfirmation, setShowLogoutConfirmation] = useState(false);
   const [selectedRating, setSelectedRating] = useState(0);
   const [orders, setOrders] = useState<CustomerOrderSummary[]>([]);
-  const [loadingOrders, setLoadingOrders] = useState(true);
+  const [, setLoadingOrders] = useState(true);
 
   const [feedback, setFeedback] = useState("");
   const [selectedOrder, setSelectedOrder] = useState<string | null>(null);
@@ -522,25 +523,29 @@ export default function ProfilePage() {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 8 }}
       transition={{ duration: 0.35 }}
-      className="min-h-screen bg-[#F8F8F8] pb-28"
+      className="min-h-screen bg-[#F6F7F9] pb-28"
     >
-      <div className="p-6">
-        <header className="flex items-center justify-between mb-6">
-          <Link href="/customer/dashboard" className="inline-flex items-center gap-3 text-[#4D4D4D]">
+      <div className="mx-auto max-w-4xl px-4 py-5 sm:px-6 sm:py-8">
+        <header className="mb-5 flex items-center justify-between">
+          <Link href="/customer/dashboard" aria-label="Back to dashboard" className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/5 bg-white text-[#4D4D4D] shadow-sm transition hover:bg-gray-50">
             <ArrowLeftIcon />
-            <span className="text-lg font-semibold">Profile</span>
           </Link>
+          <div className="text-center"><h1 className="text-lg font-semibold text-[#141B34]">My profile</h1><p className="text-xs text-[#6B6B6B]">Account and preferences</p></div>
+          <div className="h-10 w-10" aria-hidden="true" />
         </header>
 
-        <section className="mb-6 overflow-hidden rounded-[28px] border border-[#F1D86F] bg-[#FFF8DC] p-4 shadow-[0_18px_50px_rgba(20,27,52,0.08)] sm:p-6">
-          <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
-            <div className="flex shrink-0 flex-col items-start gap-3">
-              <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-full bg-white shadow-sm sm:h-24 sm:w-24">
+        <section className="mb-6 overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm">
+          <div className="h-1.5 bg-[#DFB400]" />
+          <div className="flex flex-col gap-6 p-5 sm:flex-row sm:items-center sm:p-7">
+            <div className="flex shrink-0 items-center gap-3 sm:flex-col sm:items-start">
+              <div className="relative flex h-20 w-20 items-center justify-center overflow-hidden rounded-full bg-[#FFF8DC] ring-4 ring-[#FFF3B8] sm:h-24 sm:w-24">
                 {auth.profile?.avatarUrl ? (
-                  <img
+                  <Image
                     src={auth.profile.avatarUrl}
                     alt="Profile photo"
-                    className="h-full w-full object-cover"
+                    fill
+                    sizes="96px"
+                    className="object-cover"
                   />
                 ) : (
                   <DefaultUserIcon />
@@ -560,7 +565,7 @@ export default function ProfilePage() {
                 type="button"
                 disabled={uploadingAvatar}
                 onClick={() => avatarInputRef.current?.click()}
-                className="rounded-xl border border-[#141B34] px-3 py-2 text-xs font-semibold text-[#141B34] disabled:opacity-60"
+                className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-[#4D4D4D] transition hover:bg-gray-50 disabled:opacity-60"
               >
                 {uploadingAvatar ? "Uploading..." : "Change photo"}
               </button>
@@ -568,7 +573,7 @@ export default function ProfilePage() {
             <div className="min-w-0 flex-1">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-[#8A6A00]">Customer profile</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#9A7C00]">Personal account</p>
                   <h2 className="mt-1 break-words text-2xl font-semibold leading-tight text-[#141B34] sm:text-3xl">
                     {displayName || (authLoading ? "Loading..." : "Customer")}
                   </h2>
@@ -577,7 +582,7 @@ export default function ProfilePage() {
                     {displayPhone || "No phone number saved"}
                   </p>
                   {auth.profile?.birthday ? (
-                    <div className="mt-4 inline-flex max-w-full items-center gap-2 rounded-full bg-white px-3 py-2 text-sm font-semibold text-[#141B34] shadow-sm">
+                    <div className="mt-4 inline-flex max-w-full items-center gap-2 rounded-full bg-[#FFF8DC] px-3 py-2 text-xs font-semibold text-[#6E5900]">
                       <span className="inline-flex h-2.5 w-2.5 rounded-full bg-[#DFB400]" />
                       <span className="truncate">Birthday: {formatBirthdayLabel(auth.profile.birthday)}</span>
                     </div>
@@ -585,7 +590,7 @@ export default function ProfilePage() {
                 </div>
                 <button
                   onClick={toggleProfileEditor}
-                  className="w-full rounded-2xl bg-[#141B34] px-4 py-3 text-sm font-semibold text-white shadow-sm sm:w-auto"
+                  className="w-full rounded-xl border border-[#141B34] bg-white px-5 py-3 text-sm font-semibold text-[#141B34] transition hover:bg-[#141B34] hover:text-white sm:w-auto"
                 >
                   {editing ? "Close" : "Edit profile"}
                 </button>
@@ -594,7 +599,7 @@ export default function ProfilePage() {
           </div>
 
           {editing && (
-            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mt-6 rounded-[24px] bg-white p-5 shadow-sm border border-gray-200">
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="border-t border-gray-100 bg-[#FAFAFA] p-5 text-[#141B34] sm:p-7">
               <div className="grid gap-3 sm:grid-cols-2">
                 <input value={name} onChange={(e) => setName(e.target.value)} className="w-full rounded-2xl border border-gray-200 p-4" placeholder="Full name" />
                 <input value={email} readOnly className="w-full rounded-2xl border border-gray-200 bg-gray-50 p-4 text-[#6B6B6B]" aria-label="Email address" />
@@ -610,15 +615,16 @@ export default function ProfilePage() {
           )}
         </section>
 
-        <section className="mb-6">
-          <div className="flex items-center justify-between mb-3">
+        <div className="mb-6 grid gap-4 md:grid-cols-2">
+        <section className="h-full rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+          <div className="mb-4 flex items-center justify-between">
             <div>
               <h3 className="text-base font-semibold text-[#141B34]">Birthday perks</h3>
-              <p className="text-sm text-[#6B6B6B]">Add your birthday to unlock special discounts from us.</p>
+              <p className="mt-1 text-sm text-[#6B6B6B]">Unlock a little something special.</p>
             </div>
             <div className="rounded-full bg-[#FFF7E0] px-3 py-1 text-xs font-semibold text-[#141B34]">Premium</div>
           </div>
-          <div className="rounded-[28px] bg-white p-5 shadow-sm border border-gray-200">
+          <div>
             {auth.profile?.birthday && !editingBirthday ? (
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
@@ -633,7 +639,7 @@ export default function ProfilePage() {
                 </button>
               </div>
             ) : (
-              <div className="grid gap-4 sm:grid-cols-[1fr_120px_auto] sm:items-center">
+              <div className="grid gap-3 sm:grid-cols-2">
                 <select
                   value={birthdayMonth}
                   onChange={(event) => setBirthdayMonth(event.target.value)}
@@ -660,7 +666,7 @@ export default function ProfilePage() {
                 </select>
                 <button
                   disabled={savingBirthday}
-                  className="rounded-2xl bg-[#141B34] px-6 py-3 text-sm font-semibold text-white disabled:opacity-60"
+                  className="rounded-xl bg-[#141B34] px-6 py-3 text-sm font-semibold text-white disabled:opacity-60 sm:col-span-2"
                   onClick={saveBirthday}
                 >
                   {savingBirthday ? "Saving..." : "Save birthday"}
@@ -670,26 +676,26 @@ export default function ProfilePage() {
           </div>
         </section>
 
-        <section className="mb-6">
-          <div className="rounded-[28px] border border-gray-200 bg-white p-5 shadow-sm">
+        <section className="h-full rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+          <div className="flex h-full flex-col">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h3 className="text-base font-semibold text-[#141B34]">Order history</h3>
+                <div className="mb-4 grid h-10 w-10 place-items-center rounded-xl bg-[#FFF7E0] text-lg" aria-hidden="true">🛍️</div>
+                <h3 className="text-base font-semibold text-[#141B34]">Your orders</h3>
                 <p className="mt-1 text-sm text-[#6B6B6B]">
                   Track orders and leave ratings.
                 </p>
               </div>
               <Link
                 href="/customer/orders"
-                className="rounded-2xl bg-[#141B34] px-5 py-3 text-center text-sm font-semibold text-white"
+                className="mt-auto rounded-xl bg-[#141B34] px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-[#27304a]"
               >
                 View order history
               </Link>
             </div>
           </div>
         </section>
-
-        <NotificationSettingsPanel />
+        </div>
 
         {/* <section className="mb-6">
           <div className="flex items-center justify-between mb-3">
@@ -775,14 +781,14 @@ export default function ProfilePage() {
           </div>
         </section> */}
 
-        <section className="mb-6 hidden">
+        <section className="mb-6">
           <div className="flex items-center justify-between mb-3">
             <div>
-              <h3 className="text-base font-semibold text-[#141B34]">Saved addresses</h3>
+              <h3 className="text-xl font-semibold text-[#141B34]">Saved addresses</h3>
               <p className="text-sm text-[#6B6B6B]">Keep up to 3 delivery addresses ready for checkout.</p>
             </div>
           </div>
-          <div className="rounded-[28px] bg-white p-5 shadow-sm border border-gray-200">
+          <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
             {loadingAddresses ? (
               <p className="text-sm text-[#6B6B6B]">Loading saved addresses...</p>
             ) : null}
@@ -881,14 +887,17 @@ export default function ProfilePage() {
           </div>
         </section>
 
-        <section className="mb-6">
-          <div className="flex items-center justify-between mb-3">
+        <NotificationSettingsPanel />
+
+        <details className="group mb-6 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-4 p-5 [&::-webkit-details-marker]:hidden">
             <div>
-              <h3 className="text-base font-semibold text-[#141B34]">Rate & Feedback</h3>
-              <p className="text-sm text-[#6B6B6B]">Review an order and help us improve your experience.</p>
+              <h3 className="text-base font-semibold text-[#141B34]">Rate your experience</h3>
+              <p className="mt-1 text-sm text-[#6B6B6B]">Review an order and help Mando improve.</p>
             </div>
-          </div>
-          <div className="rounded-[28px] bg-white p-5 shadow-sm border border-gray-200">
+            <span className="text-xl text-[#6B6B6B] transition group-open:rotate-180" aria-hidden="true">⌄</span>
+          </summary>
+          <div className="border-t border-gray-100 p-5">
             <select
               className="w-full rounded-2xl border border-gray-200 bg-[#F9F9F9] px-4 py-3 mb-4"
               onChange={(e) => setSelectedOrder(e.target.value)}
@@ -941,10 +950,10 @@ export default function ProfilePage() {
               </button>
             </div>
           </div>
-        </section>
+        </details>
 
-        <div className="mb-20">
-          <button disabled={loggingOut} onClick={() => setShowLogoutConfirmation(true)} className="w-full rounded-2xl bg-[#E53E3E] py-4 text-sm font-semibold text-white shadow-sm disabled:opacity-60">
+        <div className="mb-20 border-t border-gray-200 pt-6 text-center">
+          <button disabled={loggingOut} onClick={() => setShowLogoutConfirmation(true)} className="rounded-xl border border-red-200 bg-white px-8 py-3 text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:opacity-60">
             {loggingOut ? "Logging out..." : "Logout"}
           </button>
         </div>
