@@ -18,12 +18,13 @@ export const cronRoutes: FastifyPluginAsync = async (app) => {
 
     const startedAt = new Date()
     const remindersCreated = await createDailySalesAgentPostReminders(startedAt)
-    await deliverPendingPushNotifications()
+    const deliverySummary = await deliverPendingPushNotifications(request.log)
 
     request.log.info({ remindersCreated, startedAt }, 'Scheduled notification cycle completed')
     return {
       ok: true,
       remindersCreated,
+      deliverySummary,
       startedAt: startedAt.toISOString(),
       completedAt: new Date().toISOString(),
     }

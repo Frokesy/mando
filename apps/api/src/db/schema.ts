@@ -1340,16 +1340,23 @@ export const pushSubscriptions = pgTable(
 export const pushDeliveries = pgTable(
   'push_deliveries',
   {
+    id: uuid('id').primaryKey().defaultRandom(),
     notificationId: uuid('notification_id').notNull().references(() => notifications.id, { onDelete: 'cascade' }),
-    subscriptionId: uuid('subscription_id').notNull().references(() => pushSubscriptions.id, { onDelete: 'cascade' }),
+    subscriptionId: uuid('subscription_id').references(() => pushSubscriptions.id, { onDelete: 'set null' }),
+    status: text('status').notNull().default('pending'),
+    attemptCount: integer('attempt_count').notNull().default(0),
     attemptedAt: timestampWithTimezone('attempted_at').notNull().defaultNow(),
+    nextAttemptAt: timestampWithTimezone('next_attempt_at'),
     deliveredAt: timestampWithTimezone('delivered_at'),
+    failedAt: timestampWithTimezone('failed_at'),
+    responseStatus: integer('response_status'),
+    failureReason: text('failure_reason'),
     error: text('error'),
   },
-  (table) => [primaryKey({
-    name: 'push_deliveries_notification_id_subscription_id_pk',
-    columns: [table.notificationId, table.subscriptionId],
-  })],
+  (table) => [
+    uniqueIndex('push_deliveries_notification_subscription_unique').on(table.notificationId, table.subscriptionId),
+    index('push_deliveries_retry_index').on(table.status, table.nextAttemptAt),
+  ],
 )
 
 export const activityEvents = pgTable(

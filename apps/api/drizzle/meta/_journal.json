@@ -148,6 +148,13 @@
       "when": 1788921820515,
       "tag": "0020_common_bucky",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1788925564994,
+      "tag": "0021_steady_karnak",
+      "breakpoints": true
     }
   ]
 }

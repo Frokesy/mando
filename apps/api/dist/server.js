@@ -13,7 +13,7 @@ try {
     const runBackgroundJobs = process.env.NODE_ENV === 'production' || process.env.ENABLE_BACKGROUND_JOBS === 'true';
     if (runBackgroundJobs) {
         const deliverPush = () => {
-            void deliverPendingPushNotifications().catch((error) => app.log.error(error, 'Push delivery cycle failed'));
+            void deliverPendingPushNotifications(app.log).catch((error) => app.log.error(error, 'Push delivery cycle failed'));
         };
         deliverPush();
         const pushInterval = setInterval(deliverPush, 10_000);
