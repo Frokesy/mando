@@ -155,6 +155,13 @@
       "when": 1788925564994,
       "tag": "0021_steady_karnak",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1788928348656,
+      "tag": "0022_hesitant_the_order",
+      "breakpoints": true
     }
   ]
 }

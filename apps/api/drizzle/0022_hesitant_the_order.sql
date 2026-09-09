@@ -1,0 +1,2 @@
+CREATE INDEX "notifications_user_role_created_index" ON "notifications" USING btree ("user_id","target_role","created_at");--> statement-breakpoint
+CREATE INDEX "notifications_retention_index" ON "notifications" USING btree ("created_at","read_at");

@@ -3,21 +3,12 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AiFillHome, AiOutlineHome } from "react-icons/ai";
-import { FiBell, FiUser } from "react-icons/fi";
-import useUnreadNotificationCount from "@/hooks/useUnreadNotificationCount";
+import { FiUser } from "react-icons/fi";
 
 const RiderBottomNav = () => {
   const pathname = usePathname();
-  const unreadCount = useUnreadNotificationCount();
 
   const tabs = [
-    {
-      href: "/rider/notifications",
-      label: "Alerts",
-      icon: FiBell,
-      activeIcon: FiBell,
-      match: "/rider/notifications",
-    },
     {
       href: "/rider/dashboard",
       label: "Dashboard",
@@ -48,7 +39,7 @@ const RiderBottomNav = () => {
                 isActive ? "bg-[#FFF7E0] text-[#DFB400]" : "text-[#6B6B6B] hover:text-[#000]"
               }`}
             >
-              <div className="relative"><Icon size={24} />{tab.label === "Alerts" && unreadCount > 0 ? <span className="absolute -right-2.5 -top-2 inline-flex h-5 min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1 text-[9px] font-bold text-white ring-2 ring-white">{unreadCount > 99 ? "99+" : unreadCount}</span> : null}</div>
+              <Icon size={24} />
               <span className="text-[11px] font-medium">{tab.label}</span>
             </Link>
           );

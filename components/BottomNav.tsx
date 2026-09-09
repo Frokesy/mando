@@ -4,23 +4,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AiFillHome, AiOutlineHome } from "react-icons/ai";
 import { MdOutlineRestaurantMenu } from "react-icons/md";
-import { FiBell, FiShoppingBag, FiUser } from "react-icons/fi";
+import { FiShoppingBag, FiUser } from "react-icons/fi";
 import useCartStore from "@/store/cartStore";
-import useUnreadNotificationCount from "@/hooks/useUnreadNotificationCount";
 
 const BottomNav = () => {
   const pathname = usePathname();
   const cartCount = useCartStore((s) => s.items.length);
-  const unreadCount = useUnreadNotificationCount();
 
   const tabs = [
-    {
-      href: "/customer/notifications",
-      label: "Alerts",
-      icon: FiBell,
-      activeIcon: FiBell,
-      match: "/customer/notifications",
-    },
     {
       href: "/customer/dashboard",
       label: "Home",
@@ -72,9 +63,6 @@ const BottomNav = () => {
                     {cartCount}
                   </span>
                 )}
-                {tab.label === "Alerts" && unreadCount > 0 ? (
-                  <span className="absolute -right-2 -top-2 inline-flex h-5 min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1 text-[9px] font-bold text-white ring-2 ring-white">{unreadCount > 99 ? "99+" : unreadCount}</span>
-                ) : null}
               </div>
               <span className="text-[11px] font-medium">{tab.label}</span>
             </Link>

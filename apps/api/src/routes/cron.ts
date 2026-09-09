@@ -3,6 +3,7 @@ import type { FastifyPluginAsync } from 'fastify'
 import { createDailySalesAgentPostReminders } from '../notifications/sales-agent-post-reminder.js'
 import { deliverPendingPushNotifications } from '../push/delivery.js'
 import { isAuthorizedCronRequest } from './cron-auth.js'
+import { cleanupExpiredNotifications } from '../notifications/retention.js'
 
 export const cronRoutes: FastifyPluginAsync = async (app) => {
   app.post('/notifications', async (request, reply) => {
@@ -19,12 +20,14 @@ export const cronRoutes: FastifyPluginAsync = async (app) => {
     const startedAt = new Date()
     const remindersCreated = await createDailySalesAgentPostReminders(startedAt)
     const deliverySummary = await deliverPendingPushNotifications(request.log)
+    const cleanupSummary = await cleanupExpiredNotifications(startedAt)
 
     request.log.info({ remindersCreated, startedAt }, 'Scheduled notification cycle completed')
     return {
       ok: true,
       remindersCreated,
       deliverySummary,
+      cleanupSummary,
       startedAt: startedAt.toISOString(),
       completedAt: new Date().toISOString(),
     }

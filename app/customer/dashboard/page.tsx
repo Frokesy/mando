@@ -16,6 +16,7 @@ import {
 import useNotificationStore from "@/store/notificationStore";
 import useCartStore from "@/store/cartStore";
 import { useToastStore } from "@/store/toastStore";
+import useUnreadNotificationCount from "@/hooks/useUnreadNotificationCount";
 
 const API_BASE_URL = (
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000"
@@ -142,7 +143,7 @@ function formatNaira(amount: number) {
 
 const Dashboard = () => {
   const router = useRouter();
-  const unreadCount = useNotificationStore((s) => s.unreadCount);
+  const unreadCount = useUnreadNotificationCount();
   const setNotifications = useNotificationStore((s) => s.setNotifications);
   const addItem = useCartStore((s) => s.addItem);
   const showToast = useToastStore((s) => s.showToast);

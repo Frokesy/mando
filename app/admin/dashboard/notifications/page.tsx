@@ -23,7 +23,7 @@ type NotificationResponse = {
   pagination: { page: number; limit: number; total: number; totalPages: number };
 };
 
-type StatusFilter = "all" | "unread" | "read";
+type StatusFilter = "all" | "unread" | "read" | "today";
 
 export default function AdminNotificationsPage() {
   const [data, setData] = useState<NotificationResponse | null>(null);
@@ -38,7 +38,7 @@ export default function AdminNotificationsPage() {
     setError("");
     try {
       const query = new URLSearchParams({ page: String(page), limit: "25", status });
-      const response = await fetch(`${API_BASE_URL}/admin/notifications?${query}`, {
+      const response = await fetch(`${API_BASE_URL}/push/notifications?${query}`, {
         credentials: "include",
         cache: "no-store",
       });
@@ -106,7 +106,7 @@ export default function AdminNotificationsPage() {
 
       <div className="mt-5 flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white p-2 shadow-sm sm:flex-row sm:items-center sm:justify-between">
         <div className="flex gap-2 overflow-x-auto">
-          {(["all", "unread", "read"] as const).map((filter) => (
+          {(["all", "unread", "read", "today"] as const).map((filter) => (
             <button
               key={filter}
               type="button"

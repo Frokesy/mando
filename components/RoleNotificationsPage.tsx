@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowLeftIcon } from "@/components/svgs/DefaultIcons";
 import useNotificationStore, { Notification } from "@/store/notificationStore";
 import { useToastStore } from "@/store/toastStore";
@@ -33,23 +33,32 @@ export default function RoleNotificationsPage({
   const setNotifications = useNotificationStore((s) => s.setNotifications);
   const markRead = useNotificationStore((s) => s.markRead);
   const markAllRead = useNotificationStore((s) => s.markAllRead);
+  const setUnreadCount = useNotificationStore((s) => s.setUnreadCount);
   const showToast = useToastStore((s) => s.showToast);
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState<Filter>("all");
-  const unreadCount = notifications.filter((notification) => !notification.readAt).length;
+  const [page, setPage] = useState(1);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 });
+  const unreadCount = useNotificationStore((s) => s.unreadCount);
 
   useEffect(() => {
     let mounted = true;
 
-    fetch(`${API_BASE_URL}/${apiPrefix}/notifications`, {
+    const query = new URLSearchParams({ page: String(page), limit: "20", status: activeFilter });
+    fetch(`${API_BASE_URL}/push/notifications?${query}`, {
       credentials: "include",
     })
       .then(async (response) => {
         if (!response.ok) throw new Error("Unable to load notifications");
-        return response.json() as Promise<{ notifications: Notification[] }>;
+        return response.json() as Promise<{ notifications: Notification[]; unreadCount: number; pagination: typeof pagination }>;
       })
       .then((data) => {
-        if (mounted) setNotifications(data.notifications);
+        if (mounted) {
+          setNotifications(data.notifications);
+          setUnreadCount(data.unreadCount);
+          setPagination(data.pagination);
+        }
       })
       .catch((error) => {
         if (mounted) {
@@ -63,12 +72,7 @@ export default function RoleNotificationsPage({
     return () => {
       mounted = false;
     };
-  }, [apiPrefix, setNotifications, showToast]);
-
-  const visibleNotifications = useMemo(
-    () => notifications.filter((notification) => matchesFilter(notification, activeFilter)),
-    [activeFilter, notifications],
-  );
+  }, [activeFilter, page, refreshKey, setNotifications, setUnreadCount, showToast]);
 
   async function markNotificationRead(notificationId: string) {
     markRead(notificationId);
@@ -76,6 +80,7 @@ export default function RoleNotificationsPage({
       method: "PATCH",
       credentials: "include",
     });
+    setRefreshKey((value) => value + 1);
   }
 
   async function markEveryNotificationRead() {
@@ -84,6 +89,8 @@ export default function RoleNotificationsPage({
       method: "POST",
       credentials: "include",
     });
+    setPage(1);
+    setRefreshKey((value) => value + 1);
   }
 
   return (
@@ -98,7 +105,7 @@ export default function RoleNotificationsPage({
           </Link>
           <div>
             <h1 className="text-2xl font-semibold text-[#141B34]">Notifications</h1>
-            <p className="text-sm text-[#6B6B6B]">{notifications.length} total updates</p>
+            <p className="text-sm text-[#6B6B6B]">{pagination.total} updates in this view</p>
           </div>
           {unreadCount > 0 ? (
             <button
@@ -116,7 +123,7 @@ export default function RoleNotificationsPage({
             <button
               key={filter.value}
               type="button"
-              onClick={() => setActiveFilter(filter.value)}
+              onClick={() => { setLoading(true); setActiveFilter(filter.value); setPage(1); }}
               className={`shrink-0 rounded-xl px-4 py-2 text-sm font-semibold transition ${
                 activeFilter === filter.value
                   ? "bg-[#141B34] text-white"
@@ -133,11 +140,11 @@ export default function RoleNotificationsPage({
             Array.from({ length: 3 }).map((_, index) => <div key={index} className="h-32 animate-pulse rounded-2xl border border-gray-200 bg-white" />)
           ) : null}
 
-          {!loading && visibleNotifications.length === 0 ? (
+          {!loading && notifications.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-gray-300 bg-white px-5 py-12 text-center"><div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-full bg-gray-100 text-xl">🔔</div><h2 className="font-semibold text-[#141B34]">You’re all caught up</h2><p className="mt-1 text-sm text-[#6B6B6B]">No notifications match this filter.</p></div>
           ) : null}
 
-          {visibleNotifications.map((notification) => (
+          {notifications.map((notification) => (
             <div
               key={notification.id}
               className={`rounded-2xl border px-5 py-4 shadow-sm transition ${
@@ -164,22 +171,20 @@ export default function RoleNotificationsPage({
               </div>
             </div>
           ))}
+          {!loading && pagination.total > 0 ? (
+            <div className="flex items-center justify-between rounded-2xl border border-gray-200 bg-white px-4 py-3 text-xs text-[#6B6B6B] shadow-sm">
+              <span>Page {pagination.page} of {pagination.totalPages}</span>
+              <div className="flex gap-2">
+                <button type="button" disabled={page <= 1} onClick={() => { setLoading(true); setPage((value) => Math.max(1, value - 1)); }} className="rounded-lg border border-gray-200 px-3 py-2 font-semibold text-[#141B34] disabled:opacity-40">Previous</button>
+                <button type="button" disabled={page >= pagination.totalPages} onClick={() => { setLoading(true); setPage((value) => value + 1); }} className="rounded-lg border border-gray-200 px-3 py-2 font-semibold text-[#141B34] disabled:opacity-40">Next</button>
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
       {bottomNav}
     </div>
   );
-}
-
-function matchesFilter(notification: Notification, filter: Filter) {
-  if (filter === "unread") return !notification.readAt;
-  if (filter === "read") return Boolean(notification.readAt);
-  if (filter === "today") {
-    const created = new Date(notification.createdAt);
-    const now = new Date();
-    return created.toDateString() === now.toDateString();
-  }
-  return true;
 }
 
 function formatNotificationTime(value: string) {

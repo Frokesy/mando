@@ -1293,7 +1293,9 @@ export const notifications = pgTable(
   (table) => [
     index('notifications_user_id_index').on(table.userId),
     index('notifications_user_role_index').on(table.userId, table.targetRole),
+    index('notifications_user_role_created_index').on(table.userId, table.targetRole, table.createdAt),
     index('notifications_read_at_index').on(table.readAt),
+    index('notifications_retention_index').on(table.createdAt, table.readAt),
   ],
 )
 

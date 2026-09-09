@@ -42,6 +42,8 @@ Set `CRON_SECRET` to a random value of at least 32 characters in the backend and
 
 If the 9:00 AM Lagos-time execution is missed, the next call later that day creates that day's reminder. The endpoint also immediately runs pending push delivery. A successful response includes `remindersCreated`, `startedAt`, and `completedAt`; monitor non-2xx responses in the scheduler. Keep `ENABLE_BACKGROUND_JOBS=true` only if the API host reliably stays awake. The external cron endpoint is the production-safe option for sleeping or frequently restarted hosts.
 
+Notification cleanup runs from the same authenticated cron call. Read notifications are retained for 90 days and unread notifications for 180 days. Expired records and their push-delivery attempts are deleted in batches of up to 1,000 under a PostgreSQL advisory lock, making cleanup safe across multiple API instances.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.

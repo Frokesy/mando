@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { and, eq, isNull } from 'drizzle-orm'
+import { and, desc, eq, gte, isNotNull, isNull } from 'drizzle-orm'
 import { z } from 'zod'
 
 import { getCurrentSessionContext } from '../auth/current-session.js'
@@ -27,8 +27,52 @@ const preferencesSchema = z.object({
   quietHoursStart: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
   quietHoursEnd: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
 })
+const notificationListQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+  status: z.enum(['all', 'unread', 'read', 'today']).default('all'),
+})
 
 export async function pushRoutes(app: FastifyInstance) {
+  app.get('/notifications', async (request, reply) => {
+    const session = await getCurrentSessionContext(request.headers.cookie)
+    if (!session) return reply.status(401).send({ error: 'unauthenticated' })
+    const query = notificationListQuerySchema.safeParse(request.query)
+    if (!query.success) return reply.status(400).send({ error: 'invalid_notification_filters' })
+
+    const conditions = [
+      eq(notifications.userId, session.userId),
+      eq(notifications.targetRole, session.activeRole),
+    ]
+    if (query.data.status === 'unread') conditions.push(isNull(notifications.readAt))
+    if (query.data.status === 'read') conditions.push(isNotNull(notifications.readAt))
+    if (query.data.status === 'today') conditions.push(gte(notifications.createdAt, startOfLagosDay()))
+
+    const rows = await database.select({
+      id: notifications.id,
+      type: notifications.type,
+      title: notifications.title,
+      body: notifications.body,
+      data: notifications.data,
+      readAt: notifications.readAt,
+      createdAt: notifications.createdAt,
+    }).from(notifications).where(and(...conditions)).orderBy(desc(notifications.createdAt))
+    const visibleRows = await filterInAppNotifications(rows, session.userId, session.activeRole)
+    const unreadRows = await database.select({ type: notifications.type }).from(notifications).where(and(
+      eq(notifications.userId, session.userId),
+      eq(notifications.targetRole, session.activeRole),
+      isNull(notifications.readAt),
+    ))
+    const visibleUnreadRows = await filterInAppNotifications(unreadRows, session.userId, session.activeRole)
+    const total = visibleRows.length
+    const offset = (query.data.page - 1) * query.data.limit
+    return reply.send({
+      notifications: visibleRows.slice(offset, offset + query.data.limit),
+      unreadCount: visibleUnreadRows.length,
+      pagination: { page: query.data.page, limit: query.data.limit, total, totalPages: Math.max(1, Math.ceil(total / query.data.limit)) },
+    })
+  })
+
   app.get('/unread-count', async (request, reply) => {
     const session = await getCurrentSessionContext(request.headers.cookie)
     if (!session) return reply.status(401).send({ error: 'unauthenticated' })
@@ -126,6 +170,11 @@ export async function pushRoutes(app: FastifyInstance) {
     void deliverPendingPushNotifications().catch((error) => request.log.error(error, 'Test push delivery failed'))
     return reply.status(202).send({ queued: true })
   })
+}
+
+function startOfLagosDay(now = new Date()) {
+  const lagosNow = new Date(now.getTime() + 60 * 60_000)
+  return new Date(Date.UTC(lagosNow.getUTCFullYear(), lagosNow.getUTCMonth(), lagosNow.getUTCDate()) - 60 * 60_000)
 }
 
 function notificationUrl(role: string) {
