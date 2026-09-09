@@ -29,6 +29,19 @@ npm run test:api
 
 Keep production credentials only in the deployment environment. Do not place the production URL in `.env.test`.
 
+## Production notification scheduler
+
+Scheduled notifications can be triggered independently of the API process through:
+
+```text
+POST /internal/cron/notifications
+Authorization: Bearer <CRON_SECRET>
+```
+
+Set `CRON_SECRET` to a random value of at least 32 characters in the backend and scheduler environments. Configure the production scheduler to call the endpoint every 5 minutes. Frequent calls are safe: a PostgreSQL advisory lock and the daily notification check prevent duplicate sales-agent reminders, including when several API instances receive the trigger at once.
+
+If the 9:00 AM Lagos-time execution is missed, the next call later that day creates that day's reminder. The endpoint also immediately runs pending push delivery. A successful response includes `remindersCreated`, `startedAt`, and `completedAt`; monitor non-2xx responses in the scheduler. Keep `ENABLE_BACKGROUND_JOBS=true` only if the API host reliably stays awake. The external cron endpoint is the production-safe option for sleeping or frequently restarted hosts.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
