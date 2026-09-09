@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import useNotificationStore from "@/store/notificationStore";
 
 const API_BASE_URL =
   (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000").replace(/\/+$/, "");
@@ -30,6 +31,7 @@ export default function AdminNotificationsPage() {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const setGlobalUnreadCount = useNotificationStore((state) => state.setUnreadCount);
 
   const loadNotifications = useCallback(async () => {
     setLoading(true);
@@ -43,12 +45,13 @@ export default function AdminNotificationsPage() {
       const result = await response.json().catch(() => null);
       if (!response.ok) throw new Error(result?.message ?? "Unable to load admin notifications.");
       setData(result as NotificationResponse);
+      setGlobalUnreadCount((result as NotificationResponse).unreadCount);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to load admin notifications.");
     } finally {
       setLoading(false);
     }
-  }, [page, status]);
+  }, [page, setGlobalUnreadCount, status]);
 
   useEffect(() => {
     const initialLoad = window.setTimeout(() => void loadNotifications(), 0);
@@ -61,6 +64,8 @@ export default function AdminNotificationsPage() {
       credentials: "include",
     });
     if (!response.ok) return;
+    const wasUnread = data?.notifications.some((notification) => notification.id === notificationId && !notification.readAt) ?? false;
+    if (wasUnread) setGlobalUnreadCount(Math.max(0, (data?.unreadCount ?? 0) - 1));
     setData((current) => current ? {
       ...current,
       unreadCount: Math.max(0, current.unreadCount - 1),
@@ -77,6 +82,7 @@ export default function AdminNotificationsPage() {
       credentials: "include",
     });
     if (!response.ok) return;
+    setGlobalUnreadCount(0);
     await loadNotifications();
   }
 

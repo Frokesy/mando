@@ -10,6 +10,7 @@ import RiderBottomNav from "@/components/RiderBottomNav";
 import { MoneyIcon, TimerIcon } from "@/components/svgs/DefaultIcons";
 import useAuthStore from "@/store/authStore";
 import { useToastStore } from "@/store/toastStore";
+import UnreadNotificationBadge from "@/components/UnreadNotificationBadge";
 
 const API_BASE_URL =
   (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000").replace(/\/+$/, "");
@@ -245,9 +246,10 @@ export default function RiderDashboard() {
               href="/rider/notifications"
               aria-label="Notifications"
               title="Notifications"
-              className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-[#141B34] shadow-sm ring-1 ring-gray-200"
+              className="relative inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-[#141B34] shadow-sm ring-1 ring-gray-200"
             >
               <FiBell className="h-5 w-5" />
+              <UnreadNotificationBadge />
             </Link>
             {dashboard ? (
               <button

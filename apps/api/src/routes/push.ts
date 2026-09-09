@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import { z } from 'zod'
 
 import { getCurrentSessionContext } from '../auth/current-session.js'
@@ -7,6 +7,7 @@ import { database } from '../db/client.js'
 import { notificationPreferences, notifications, pushSubscriptions } from '../db/schema.js'
 import { deliverPendingPushNotifications, getPushPublicKey } from '../push/delivery.js'
 import {
+  filterInAppNotifications,
   getNotificationPreferences,
   notificationCategories,
 } from '../notifications/preferences.js'
@@ -28,6 +29,19 @@ const preferencesSchema = z.object({
 })
 
 export async function pushRoutes(app: FastifyInstance) {
+  app.get('/unread-count', async (request, reply) => {
+    const session = await getCurrentSessionContext(request.headers.cookie)
+    if (!session) return reply.status(401).send({ error: 'unauthenticated' })
+
+    const unreadRows = await database.select({ type: notifications.type }).from(notifications).where(and(
+      eq(notifications.userId, session.userId),
+      eq(notifications.targetRole, session.activeRole),
+      isNull(notifications.readAt),
+    ))
+    const visibleRows = await filterInAppNotifications(unreadRows, session.userId, session.activeRole)
+    return reply.send({ role: session.activeRole, unreadCount: visibleRows.length })
+  })
+
   app.get('/preferences', async (request, reply) => {
     const session = await getCurrentSessionContext(request.headers.cookie)
     if (!session) return reply.status(401).send({ error: 'unauthenticated' })

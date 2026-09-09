@@ -1,30 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
 import { NotificationIcon } from "@/components/svgs/DefaultIcons";
-
-const API_BASE_URL =
-  (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000").replace(/\/+$/, "");
+import useUnreadNotificationCount from "@/hooks/useUnreadNotificationCount";
 
 export default function AdminNotificationBell() {
-  const [unreadCount, setUnreadCount] = useState(0);
-
-  useEffect(() => {
-    let mounted = true;
-    const refresh = () => {
-      void fetch(`${API_BASE_URL}/admin/notifications?page=1&limit=1&status=unread`, {
-        credentials: "include",
-        cache: "no-store",
-      }).then((response) => response.ok ? response.json() : null)
-        .then((result: { unreadCount?: number } | null) => {
-          if (mounted && result) setUnreadCount(result.unreadCount ?? 0);
-        }).catch(() => undefined);
-    };
-    refresh();
-    const interval = window.setInterval(refresh, 30_000);
-    return () => { mounted = false; window.clearInterval(interval); };
-  }, []);
+  const unreadCount = useUnreadNotificationCount();
 
   return (
     <Link

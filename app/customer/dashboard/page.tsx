@@ -142,7 +142,7 @@ function formatNaira(amount: number) {
 
 const Dashboard = () => {
   const router = useRouter();
-  const unreadCount = useNotificationStore((s) => s.unreadCount());
+  const unreadCount = useNotificationStore((s) => s.unreadCount);
   const setNotifications = useNotificationStore((s) => s.setNotifications);
   const addItem = useCartStore((s) => s.addItem);
   const showToast = useToastStore((s) => s.showToast);
@@ -223,9 +223,11 @@ const Dashboard = () => {
   }, [setNotifications]);
 
   useEffect(() => {
-    const storedSearches = localStorage.getItem("mando_recent_searches");
-    if (storedSearches)
-      setRecentSearches(JSON.parse(storedSearches) as string[]);
+    const loadStoredSearches = window.setTimeout(() => {
+      const storedSearches = localStorage.getItem("mando_recent_searches");
+      if (storedSearches) setRecentSearches(JSON.parse(storedSearches) as string[]);
+    }, 0);
+    return () => window.clearTimeout(loadStoredSearches);
   }, []);
 
   const comboSearchResults = useMemo(
@@ -347,7 +349,7 @@ const Dashboard = () => {
           </Link>
           {unreadCount > 0 && (
             <span className="absolute -top-1 -right-1 inline-flex h-5 min-w-[18px] items-center justify-center rounded-full bg-[#DFB400] px-1.5 text-[10px] font-semibold text-black">
-              {unreadCount}
+              {unreadCount > 99 ? "99+" : unreadCount}
             </span>
           )}
         </div>
