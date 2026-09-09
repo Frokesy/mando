@@ -29,6 +29,7 @@ import {
   profiles,
   referrals,
   restaurantEarnings,
+  restaurantMembers,
   restaurants,
   riderProfiles,
   riderServiceAreas,
@@ -502,6 +503,7 @@ async function updateDeliveryAssignment(
       orderStatus: orders.status,
       orderSubtotalAmount: orders.subtotalAmount,
       customerId: orders.customerId,
+      restaurantId: orders.restaurantId,
     })
     .from(deliveries)
     .innerJoin(orders, eq(deliveries.orderId, orders.id))
@@ -611,6 +613,40 @@ async function updateDeliveryAssignment(
         updatedAt: now,
       })
       .where(eq(riderProfiles.userId, auth.userId))
+
+    if (options.action === 'accept') {
+      await tx.insert(notifications).values({
+        userId: target.customerId,
+        targetRole: 'customer',
+        type: 'rider_accepted_delivery',
+        title: 'A rider has accepted your delivery',
+        body: `${rider.profile.fullName} will collect order ${target.orderNumber}.`,
+        data: { orderId: target.orderId, orderNumber: target.orderNumber, riderId: auth.userId },
+      })
+    }
+
+    if (options.action === 'picked_up' || options.action === 'delivered') {
+      const restaurantUsers = await tx
+        .select({ userId: restaurantMembers.userId })
+        .from(restaurantMembers)
+        .where(and(
+          eq(restaurantMembers.restaurantId, target.restaurantId),
+          eq(restaurantMembers.status, 'active'),
+        ))
+
+      if (restaurantUsers.length > 0) {
+        await tx.insert(notifications).values(restaurantUsers.map(({ userId }) => ({
+          userId,
+          targetRole: 'restaurant' as const,
+          type: options.action === 'delivered' ? 'restaurant_order_delivered' : 'restaurant_order_picked_up',
+          title: options.action === 'delivered' ? 'Order delivered' : 'Order picked up',
+          body: options.action === 'delivered'
+            ? `Order ${target.orderNumber} has been delivered successfully.`
+            : `A rider has picked up order ${target.orderNumber}.`,
+          data: { orderId: target.orderId, orderNumber: target.orderNumber },
+        })))
+      }
+    }
 
     if (options.action === 'delivered') {
       const [referral] = await tx

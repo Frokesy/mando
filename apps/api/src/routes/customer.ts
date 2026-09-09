@@ -6,6 +6,7 @@ import { getCurrentSessionContext } from '../auth/current-session.js'
 import { serializeClearSessionCookie } from '../auth/index.js'
 import { database } from '../db/client.js'
 import { getRestaurantAvailability } from '../restaurants/availability.js'
+import { notifyActiveAdmins } from '../notifications/admin.js'
 import {
   addresses,
   adminSettings,
@@ -1201,6 +1202,13 @@ export async function customerRoutes(app: FastifyInstance) {
       body: `We received your report for order ${order.orderNumber}.`,
       data: { orderId: order.id, orderNumber: order.orderNumber, issueId: issue.id },
     })
+
+    void notifyActiveAdmins({
+      type: 'admin_customer_order_issue',
+      title: 'Customer reported an order issue',
+      body: `Order ${order.orderNumber} requires support review.`,
+      data: { orderId: order.id, issueId: issue.id, url: '/admin/dashboard/orders' },
+    }).catch((error) => request.log.error(error, 'Unable to notify admins about customer order issue'))
 
     return reply.status(201).send({
       issue,

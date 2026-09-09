@@ -286,6 +286,15 @@ export async function restaurantRoutes(app: FastifyInstance) {
         actorUserId: context.userId,
         note: 'Restaurant accepted the order and started preparation.',
       })
+
+      await tx.insert(notifications).values({
+        userId: order.customerId,
+        targetRole: 'customer',
+        type: 'restaurant_accepted_order',
+        title: 'Restaurant accepted your order',
+        body: `Order ${order.orderNumber} is now being prepared.`,
+        data: { orderId: order.id, orderNumber: order.orderNumber },
+      })
     })
 
     return reply.status(200).send({
@@ -355,6 +364,13 @@ export async function restaurantRoutes(app: FastifyInstance) {
       })
     })
 
+    void notifyActiveAdmins({
+      type: 'admin_restaurant_rejected_order',
+      title: 'Restaurant rejected an order',
+      body: `Order ${order.orderNumber} requires admin review.`,
+      data: { orderId: order.id, url: '/admin/dashboard/orders' },
+    }).catch((error) => request.log.error(error, 'Unable to notify admins about rejected order'))
+
     return reply.status(200).send({
       order: await getRestaurantOrderDetail(context.restaurant.id, order.id),
     })
@@ -386,6 +402,15 @@ export async function restaurantRoutes(app: FastifyInstance) {
         status: 'ready_for_pickup',
         actorUserId: context.userId,
         note: 'Restaurant marked the order ready for pickup.',
+      })
+
+      await tx.insert(notifications).values({
+        userId: order.customerId,
+        targetRole: 'customer',
+        type: 'order_ready_for_pickup',
+        title: 'Your order is ready',
+        body: `Order ${order.orderNumber} is ready and waiting for a rider.`,
+        data: { orderId: order.id, orderNumber: order.orderNumber },
       })
 
       const availableRiders = await tx
@@ -442,6 +467,15 @@ export async function restaurantRoutes(app: FastifyInstance) {
         message: 'There are no available earnings to request.',
       })
     }
+
+    await database.insert(notifications).values({
+      userId: context.userId,
+      targetRole: 'restaurant',
+      type: 'restaurant_payout_requested',
+      title: 'Payout request sent',
+      body: `Your ${formatMoney(payoutRequest.amount)} restaurant payout request has been sent to admin.`,
+      data: { payoutRequestId: payoutRequest.id, amount: payoutRequest.amount },
+    })
 
     void notifyActiveAdmins({
       type: 'admin_restaurant_payout_requested',

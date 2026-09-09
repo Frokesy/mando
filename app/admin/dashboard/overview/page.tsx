@@ -80,21 +80,47 @@ type AdminOverviewData = {
   }[];
 };
 
+async function fetchAdminOverview() {
+  let lastError: Error | null = null;
+
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/overview`, {
+        credentials: "include",
+        cache: "no-store",
+        signal: AbortSignal.timeout(20_000),
+      });
+      if (response.ok) return response.json() as Promise<AdminOverviewData>;
+      if (response.status < 500) throw new Error("Unable to load admin overview");
+      lastError = new Error("The test database is temporarily unavailable.");
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error("Unable to load admin overview");
+    }
+
+    if (attempt < 3) {
+      await new Promise((resolve) => window.setTimeout(resolve, attempt * 500));
+    }
+  }
+
+  throw lastError ?? new Error("Unable to load admin overview");
+}
+
 const AdminOverview = () => {
   const [data, setData] = useState<AdminOverviewData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [retryKey, setRetryKey] = useState(0);
   const [range, setRange] = useState("7");
 
   useEffect(() => {
     let mounted = true;
 
-    fetch(`${API_BASE_URL}/admin/overview`, { credentials: "include" })
-      .then(async (response) => {
-        if (!response.ok) throw new Error("Unable to load admin overview");
-        return response.json() as Promise<AdminOverviewData>;
-      })
+    fetchAdminOverview()
       .then((result) => {
         if (mounted) setData(result);
+      })
+      .catch((error) => {
+        if (mounted) setLoadError(error instanceof Error ? error.message : "Unable to load admin overview");
       })
       .finally(() => {
         if (mounted) setLoading(false);
@@ -103,7 +129,7 @@ const AdminOverview = () => {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [retryKey]);
 
   const legacyMandoRevenue = data?.stats.revenueAmount ?? data?.quickStats.totalRevenueAmount ?? 0;
   const hasRevenueBreakdown = data?.stats.mandoGrossRevenue !== undefined;
@@ -198,6 +224,23 @@ const AdminOverview = () => {
       <p className="text-[11px] text-[#99A1AF]">
         {loading ? "Loading platform activity..." : "Here's what's happening with your platform today."}
       </p>
+
+      {loadError ? (
+        <div className="mt-4 mr-8 flex items-center justify-between rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-[11px] text-red-800">
+          <span>{loadError}</span>
+          <button
+            type="button"
+            className="font-semibold underline"
+            onClick={() => {
+              setLoading(true);
+              setLoadError(null);
+              setRetryKey((value) => value + 1);
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      ) : null}
 
       <div className="mt-10 grid grid-cols-2 gap-3 pr-8 md:grid-cols-3 xl:grid-cols-6">
         {loading

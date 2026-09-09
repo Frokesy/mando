@@ -887,6 +887,19 @@ export async function adminRoutes(app: FastifyInstance) {
       })
     }
 
+    if (updatedRequest.userId) {
+      await database.insert(notifications).values({
+        userId: updatedRequest.userId,
+        targetRole: 'rider',
+        type: 'rider_payout_reviewed',
+        title: parsedBody.data.status === 'approved' ? 'Payout approved' : 'Payout rejected',
+        body: parsedBody.data.status === 'approved'
+          ? 'Your rider payout request was approved for manual processing.'
+          : 'Your rider payout request was rejected. Contact Mando support if you need help.',
+        data: { payoutRequestId: updatedRequest.id, status: parsedBody.data.status },
+      })
+    }
+
     return reply.status(200).send({ request: updatedRequest })
   })
 
@@ -1099,6 +1112,29 @@ export async function adminRoutes(app: FastifyInstance) {
         error: 'withdrawal_not_found',
         message: 'Withdrawal request not found.',
       })
+    }
+
+    if (updatedRequest.restaurantId) {
+      const members = await database
+        .select({ userId: restaurantMembers.userId })
+        .from(restaurantMembers)
+        .where(and(
+          eq(restaurantMembers.restaurantId, updatedRequest.restaurantId),
+          eq(restaurantMembers.status, 'active'),
+        ))
+
+      if (members.length > 0) {
+        await database.insert(notifications).values(members.map(({ userId }) => ({
+          userId,
+          targetRole: 'restaurant' as const,
+          type: 'restaurant_payout_reviewed',
+          title: parsedBody.data.status === 'approved' ? 'Payout approved' : 'Payout rejected',
+          body: parsedBody.data.status === 'approved'
+            ? 'Your restaurant payout request was approved for manual processing.'
+            : 'Your restaurant payout request was rejected. Contact Mando support if you need help.',
+          data: { payoutRequestId: updatedRequest.id, status: parsedBody.data.status },
+        })))
+      }
     }
 
     return reply.status(200).send({ request: updatedRequest })
@@ -1399,6 +1435,13 @@ export async function adminRoutes(app: FastifyInstance) {
       })
     }
 
+    await notifyRestaurantMembers(restaurant.id, {
+      type: 'restaurant_status_changed',
+      title: 'Restaurant account updated',
+      body: `Your restaurant account is now ${parsedBody.data.status}.`,
+      data: { status: parsedBody.data.status },
+    })
+
     const vendor = await selectAdminVendorDetail(restaurant.id)
     return reply.status(200).send({ vendor })
   })
@@ -1430,6 +1473,13 @@ export async function adminRoutes(app: FastifyInstance) {
         message: 'Vendor not found.',
       })
     }
+
+    await notifyRestaurantMembers(restaurant.id, {
+      type: 'restaurant_account_approved',
+      title: 'Restaurant approved',
+      body: 'Your Mando restaurant account is now active.',
+      data: { status: 'active', url: '/restaurant/dashboard' },
+    })
 
     const vendor = await selectAdminVendorDetail(restaurant.id)
     return reply.status(200).send({ vendor })
@@ -1645,6 +1695,23 @@ export async function adminRoutes(app: FastifyInstance) {
 
     const updatedPayment = await database.transaction(async (tx) => {
       const now = new Date()
+      const [order] = await tx
+        .select({
+          id: orders.id,
+          orderNumber: orders.orderNumber,
+          customerId: orders.customerId,
+          restaurantId: orders.restaurantId,
+        })
+        .from(orders)
+        .where(eq(orders.id, payment.orderId))
+        .limit(1)
+      const commissionRecipients = await tx
+        .select({
+          userId: commissions.salesAgentId,
+          amount: commissions.commissionAmount,
+        })
+        .from(commissions)
+        .where(eq(commissions.orderId, payment.orderId))
       const [updated] = await tx
         .update(payments)
         .set({ status: 'refunded', updatedAt: now })
@@ -1670,6 +1737,46 @@ export async function adminRoutes(app: FastifyInstance) {
         .update(referrals)
         .set({ status: 'attributed', firstEligibleOrderId: null })
         .where(eq(referrals.firstEligibleOrderId, updated.orderId))
+
+      if (order) {
+        await tx.insert(notifications).values({
+          userId: order.customerId,
+          targetRole: 'customer',
+          type: 'payment_refunded',
+          title: 'Payment refunded',
+          body: `The payment for order ${order.orderNumber} has been marked as refunded.`,
+          data: { orderId: order.id, orderNumber: order.orderNumber, paymentId: payment.id },
+        })
+
+        const restaurantUsers = await tx
+          .select({ userId: restaurantMembers.userId })
+          .from(restaurantMembers)
+          .where(and(
+            eq(restaurantMembers.restaurantId, order.restaurantId),
+            eq(restaurantMembers.status, 'active'),
+          ))
+        if (restaurantUsers.length > 0) {
+          await tx.insert(notifications).values(restaurantUsers.map(({ userId }) => ({
+            userId,
+            targetRole: 'restaurant' as const,
+            type: 'restaurant_order_refunded',
+            title: 'Order refunded',
+            body: `Order ${order.orderNumber} was refunded and its earnings were reversed.`,
+            data: { orderId: order.id, orderNumber: order.orderNumber, paymentId: payment.id },
+          })))
+        }
+
+        if (commissionRecipients.length > 0) {
+          await tx.insert(notifications).values(commissionRecipients.map((recipient) => ({
+            userId: recipient.userId,
+            targetRole: 'sales_agent' as const,
+            type: 'commission_reversed',
+            title: 'Commission reversed',
+            body: `${formatMoney(recipient.amount)} commission from refunded order ${order.orderNumber} was reversed.`,
+            data: { orderId: order.id, orderNumber: order.orderNumber, amount: recipient.amount },
+          })))
+        }
+      }
 
       return updated
     })
@@ -1851,6 +1958,15 @@ export async function adminRoutes(app: FastifyInstance) {
             })
             .where(eq(salesAgentProfiles.userId, agent.userId))
 
+          await tx.insert(notifications).values({
+            userId: agent.userId,
+            targetRole: 'sales_agent',
+            type: 'sales_agent_account_approved',
+            title: 'Sales-agent account approved',
+            body: 'Your Mando sales-agent account is now active.',
+            data: { url: '/sales-agent/dashboard' },
+          })
+
           return {
             ...agent,
             fullName: agent.fullName ?? agent.email,
@@ -1981,6 +2097,14 @@ export async function adminRoutes(app: FastifyInstance) {
       status: parsedBody.data.status,
     })
     if (!agent) return reply.status(404).send({ error: 'agent_not_found', message: 'Agent not found.' })
+    await database.insert(notifications).values({
+      userId: parsedParams.data.agentId,
+      targetRole: 'sales_agent',
+      type: 'sales_agent_status_changed',
+      title: 'Sales-agent account updated',
+      body: `Your sales-agent account is now ${parsedBody.data.status}.`,
+      data: { status: parsedBody.data.status },
+    })
     return reply.status(200).send({ agent })
   })
 
@@ -2004,6 +2128,16 @@ export async function adminRoutes(app: FastifyInstance) {
       .returning({ userId: salesAgentProfiles.userId })
 
     if (!profile) return reply.status(404).send({ error: 'agent_not_found', message: 'Agent not found.' })
+    await database.insert(notifications).values({
+      userId: profile.userId,
+      targetRole: 'sales_agent',
+      type: 'sales_agent_tier_changed',
+      title: parsedBody.data.influencer ? 'Influencer tier enabled' : 'Influencer tier removed',
+      body: parsedBody.data.influencer
+        ? 'Your sales-agent account now has influencer features.'
+        : 'Your sales-agent account is now on the standard tier.',
+      data: { tier: parsedBody.data.influencer ? 'influencer' : 'standard' },
+    })
     return reply.status(200).send({ agent: await selectAdminSalesAgentDetail(profile.userId) })
   })
 
@@ -4323,6 +4457,26 @@ function initialsFromName(name: string) {
       .map((part) => part[0]?.toUpperCase())
       .join('') || 'NA'
   )
+}
+
+async function notifyRestaurantMembers(
+  restaurantId: string,
+  input: { type: string; title: string; body: string; data?: Record<string, unknown> },
+) {
+  const members = await database
+    .select({ userId: restaurantMembers.userId })
+    .from(restaurantMembers)
+    .where(and(
+      eq(restaurantMembers.restaurantId, restaurantId),
+      eq(restaurantMembers.status, 'active'),
+    ))
+
+  if (members.length === 0) return
+  await database.insert(notifications).values(members.map(({ userId }) => ({
+    userId,
+    targetRole: 'restaurant' as const,
+    ...input,
+  })))
 }
 
 function formatMoney(amount: number) {

@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { z } from 'zod'
 
 import { getCurrentSessionContext } from '../auth/current-session.js'
@@ -20,6 +20,7 @@ import {
 } from '../db/schema.js'
 import { getRoutePayConfig } from '../config/routepay.js'
 import { buildWebUrl } from '../config/web-url.js'
+import { notifyActiveAdmins } from '../notifications/admin.js'
 import {
   createRoutePayHostedPayment,
   getRoutePayTransaction,
@@ -217,11 +218,34 @@ async function verifyCheckoutManually(
       note: 'Payment independently verified with RoutePay.',
     })
   } else if (verification === 'failed' && order.paymentStatus !== 'verified') {
-    await database.transaction(async (tx) => {
-      await tx.update(payments).set({ status: 'failed', updatedAt: new Date() })
-        .where(eq(payments.id, order.paymentId))
+    const newlyFailed = await database.transaction(async (tx) => {
+      const [failedPayment] = await tx.update(payments).set({ status: 'failed', updatedAt: new Date() })
+        .where(and(
+          eq(payments.id, order.paymentId),
+          inArray(payments.status, ['pending', 'submitted']),
+        ))
+        .returning({ id: payments.id })
       await reverseUncompletedOrderEarnings(tx, order.id)
+      if (failedPayment) {
+        await tx.insert(notifications).values({
+          userId: order.customerId,
+          targetRole: 'customer',
+          type: 'payment_failed',
+          title: 'Payment failed',
+          body: `Payment for order ${order.orderNumber} was not successful. No successful payment was recorded.`,
+          data: { orderId: order.id, orderNumber: order.orderNumber },
+        })
+      }
+      return Boolean(failedPayment)
     })
+    if (newlyFailed) {
+      void notifyActiveAdmins({
+        type: 'admin_payment_failed',
+        title: 'Customer payment failed',
+        body: `RoutePay reported payment failure for order ${order.orderNumber}.`,
+        data: { orderId: order.id, orderNumber: order.orderNumber, url: '/admin/dashboard/payment-logs' },
+      }).catch((error) => request.log.error(error, 'Unable to notify admins about failed payment'))
+    }
     return reply.status(402).send({
       error: 'payment_failed',
       message: 'RoutePay reports that this payment failed.',
@@ -345,13 +369,36 @@ async function handleRoutePayWebhook(
     })
   } else if (verification === 'failed' && payment.paymentStatus !== 'verified') {
     const now = new Date()
-    await database.transaction(async (tx) => {
-      await tx
+    const newlyFailed = await database.transaction(async (tx) => {
+      const [failedPayment] = await tx
         .update(payments)
         .set({ status: 'failed', updatedAt: now })
-        .where(eq(payments.id, payment.paymentId))
+        .where(and(
+          eq(payments.id, payment.paymentId),
+          inArray(payments.status, ['pending', 'submitted']),
+        ))
+        .returning({ id: payments.id })
       await reverseUncompletedOrderEarnings(tx, payment.id)
+      if (failedPayment) {
+        await tx.insert(notifications).values({
+          userId: payment.customerId,
+          targetRole: 'customer',
+          type: 'payment_failed',
+          title: 'Payment failed',
+          body: `Payment for order ${payment.orderNumber} was not successful. No successful payment was recorded.`,
+          data: { orderId: payment.id, orderNumber: payment.orderNumber },
+        })
+      }
+      return Boolean(failedPayment)
     })
+    if (newlyFailed) {
+      void notifyActiveAdmins({
+        type: 'admin_payment_failed',
+        title: 'RoutePay payment failed',
+        body: `RoutePay reported payment failure for order ${payment.orderNumber}.`,
+        data: { orderId: payment.id, orderNumber: payment.orderNumber, url: '/admin/dashboard/payment-logs' },
+      }).catch((error) => request.log.error(error, 'Unable to notify admins about failed RoutePay webhook'))
+    }
   }
 
   return reply.status(200).send({
