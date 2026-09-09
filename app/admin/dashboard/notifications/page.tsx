@@ -2,8 +2,6 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import PushNotificationControl from "@/components/PushNotificationControl";
-import NotificationPreferencesControl from "@/components/NotificationPreferencesControl";
 
 const API_BASE_URL =
   (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000").replace(/\/+$/, "");
@@ -98,15 +96,6 @@ export default function AdminNotificationsPage() {
           <p className="text-[10px] text-[#98A2B3]">Unread</p>
           <p className="text-lg font-semibold text-[#101828]">{data?.unreadCount ?? 0}</p>
         </div>
-      </div>
-
-      <div className="mt-6 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-        <div className="mb-3"><h3 className="text-sm font-semibold text-[#101828]">Push notifications</h3><p className="mt-1 text-[11px] text-[#667085]">Receive urgent operational updates on this device.</p></div>
-        <PushNotificationControl />
-      </div>
-
-      <div className="mt-4">
-        <NotificationPreferencesControl />
       </div>
 
       <div className="mt-5 flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white p-2 shadow-sm sm:flex-row sm:items-center sm:justify-between">

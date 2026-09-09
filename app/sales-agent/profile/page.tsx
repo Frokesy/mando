@@ -10,6 +10,7 @@ import PayoutAccountModal from "@/components/PayoutAccountModal";
 import SalesAgentBottomNav from "@/components/SalesAgentBottomNav";
 import { ArrowLeftIcon, DefaultUserIcon } from "@/components/svgs/DefaultIcons";
 import { useToastStore } from "@/store/toastStore";
+import NotificationSettingsPanel from "@/components/NotificationSettingsPanel";
 
 const API_BASE_URL =
   (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000").replace(/\/+$/, "");
@@ -211,6 +212,8 @@ export default function SalesAgentProfile() {
             </>
           )}
         </section>
+
+        <NotificationSettingsPanel />
 
         <section className="mb-6 rounded-[28px] border border-gray-200 bg-white p-5 shadow-sm">
           <h2 className="text-xl font-semibold text-[#141B34]">Recent payout requests</h2>

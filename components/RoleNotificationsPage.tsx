@@ -5,8 +5,6 @@ import { useEffect, useMemo, useState } from "react";
 import { ArrowLeftIcon } from "@/components/svgs/DefaultIcons";
 import useNotificationStore, { Notification } from "@/store/notificationStore";
 import { useToastStore } from "@/store/toastStore";
-import PushNotificationControl from "@/components/PushNotificationControl";
-import NotificationPreferencesControl from "@/components/NotificationPreferencesControl";
 
 const API_BASE_URL =
   (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000").replace(/\/+$/, "");
@@ -112,15 +110,6 @@ export default function RoleNotificationsPage({
             </button>
           ) : null}
         </header>
-
-        <div className="mb-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
-          <div className="mb-3"><h2 className="font-semibold text-[#141B34]">Push notifications</h2><p className="mt-0.5 text-sm text-[#6B6B6B]">Receive important updates even when Mando is closed.</p></div>
-          <PushNotificationControl />
-        </div>
-
-        <div className="mb-5">
-          <NotificationPreferencesControl />
-        </div>
 
         <div className="mb-5 flex items-center gap-2 overflow-x-auto rounded-2xl border border-gray-200 bg-white p-2 shadow-sm">
           {filters.map((filter) => (

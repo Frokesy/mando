@@ -9,6 +9,7 @@ import { ArrowLeftIcon, DefaultUserIcon, GreyedStarIcon, StarIcon } from "@/comp
 import useAuthStore from "@/store/authStore";
 import { useToastStore } from "@/store/toastStore";
 import BottomNav from "@/components/BottomNav";
+import NotificationSettingsPanel from "@/components/NotificationSettingsPanel";
 
 const API_BASE_URL =
   (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000").replace(/\/+$/, "");
@@ -687,6 +688,8 @@ export default function ProfilePage() {
             </div>
           </div>
         </section>
+
+        <NotificationSettingsPanel />
 
         {/* <section className="mb-6">
           <div className="flex items-center justify-between mb-3">

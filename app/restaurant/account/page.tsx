@@ -9,6 +9,7 @@ import PayoutAccountModal from "@/components/PayoutAccountModal";
 import RestaurantBottomNav from "@/components/RestaurantBottomNav";
 import { ArrowLeftIcon, MoneyIcon, DefaultUserIcon } from "@/components/svgs/DefaultIcons";
 import { useToastStore } from "@/store/toastStore";
+import NotificationSettingsPanel from "@/components/NotificationSettingsPanel";
 
 const API_BASE_URL =
   (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000").replace(/\/+$/, "");
@@ -74,7 +75,8 @@ export default function RestaurantAccount() {
   }, [router, showToast]);
 
   useEffect(() => {
-    void loadAccount();
+    const initialLoad = window.setTimeout(() => void loadAccount(), 0);
+    return () => window.clearTimeout(initialLoad);
   }, [loadAccount]);
 
   const requestPayout = async () => {
@@ -159,6 +161,8 @@ export default function RestaurantAccount() {
                 {payoutAccount ? "Edit payout bank account" : "Add payout bank account"}
               </button>
             </section>
+
+            <NotificationSettingsPanel />
 
             <section className="mb-6 rounded-[28px] border border-gray-200 bg-white p-5 shadow-sm">
               <div className="flex items-start justify-between gap-4">
