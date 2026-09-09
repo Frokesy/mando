@@ -70,10 +70,12 @@ self.addEventListener('push', (event) => {
 
   event.waitUntil(self.registration.showNotification(payload.title || 'Mando', {
     body: payload.body || 'You have a new update.',
-    icon: '/icons/icon-192.png',
-    badge: '/icons/icon-192.png',
-    data: { url: payload.url || '/', notificationId: payload.notificationId },
+    icon: payload.icon || '/icons/icon-192.png',
+    badge: payload.badge || '/icons/icon-192.png',
+    data: { url: payload.url || '/', notificationId: payload.notificationId, role: payload.role },
     tag: payload.notificationId || undefined,
+    renotify: false,
+    silent: false,
   }));
 });
 
@@ -82,8 +84,8 @@ self.addEventListener('notificationclick', (event) => {
   const targetUrl = new URL(event.notification.data?.url || '/', self.location.origin).href;
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-      const existing = clients.find((client) => client.url === targetUrl);
-      if (existing) return existing.focus();
+      const existing = clients.find((client) => new URL(client.url).pathname.startsWith(`/${event.notification.data?.role === 'sales_agent' ? 'sales-agent' : event.notification.data?.role || ''}`));
+      if (existing) return existing.navigate(targetUrl).then(() => existing.focus());
       return self.clients.openWindow(targetUrl);
     })
   );

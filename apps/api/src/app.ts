@@ -13,6 +13,7 @@ import { restaurantRoutes } from './routes/restaurant.js'
 import { uploadRoutes } from './routes/uploads.js'
 import { pushRoutes } from './routes/push.js'
 import { cronRoutes } from './routes/cron.js'
+import { adminNotificationDeliveryRoutes } from './routes/admin-notification-delivery.js'
 
 type BuildAppOptions = {
   logger?: boolean
@@ -60,6 +61,7 @@ export function buildApp(options: BuildAppOptions = {}) {
   app.register(uploadRoutes, { prefix: '/uploads' })
   app.register(pushRoutes, { prefix: '/push' })
   app.register(cronRoutes, { prefix: '/internal/cron' })
+  app.register(adminNotificationDeliveryRoutes, { prefix: '/admin/notification-delivery' })
 
   // Add no-cache headers to all dynamic responses
   app.addHook('onSend', async (_request, reply) => {

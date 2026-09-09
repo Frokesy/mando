@@ -5,6 +5,8 @@ import { useEffect, useState } from "react";
 import { ArrowLeftIcon } from "@/components/svgs/DefaultIcons";
 import useNotificationStore, { Notification } from "@/store/notificationStore";
 import { useToastStore } from "@/store/toastStore";
+import { notificationHref } from "@/lib/notificationLinks";
+import useOnlineStatus from "@/hooks/useOnlineStatus";
 
 const API_BASE_URL =
   (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000").replace(/\/+$/, "");
@@ -40,6 +42,8 @@ export default function RoleNotificationsPage({
   const [page, setPage] = useState(1);
   const [refreshKey, setRefreshKey] = useState(0);
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 });
+  const [error, setError] = useState("");
+  const online = useOnlineStatus();
   const unreadCount = useNotificationStore((s) => s.unreadCount);
 
   useEffect(() => {
@@ -55,6 +59,7 @@ export default function RoleNotificationsPage({
       })
       .then((data) => {
         if (mounted) {
+          setError("");
           setNotifications(data.notifications);
           setUnreadCount(data.unreadCount);
           setPagination(data.pagination);
@@ -62,6 +67,7 @@ export default function RoleNotificationsPage({
       })
       .catch((error) => {
         if (mounted) {
+          setError(error instanceof Error ? error.message : "Unable to load notifications");
           showToast(error instanceof Error ? error.message : "Unable to load notifications", "error");
         }
       })
@@ -123,7 +129,7 @@ export default function RoleNotificationsPage({
             <button
               key={filter.value}
               type="button"
-              onClick={() => { setLoading(true); setActiveFilter(filter.value); setPage(1); }}
+              onClick={() => { setError(""); setLoading(true); setActiveFilter(filter.value); setPage(1); }}
               className={`shrink-0 rounded-xl px-4 py-2 text-sm font-semibold transition ${
                 activeFilter === filter.value
                   ? "bg-[#141B34] text-white"
@@ -134,6 +140,9 @@ export default function RoleNotificationsPage({
             </button>
           ))}
         </div>
+
+        {!online ? <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">You’re offline. Showing the last notifications loaded on this device.</div> : null}
+        {error ? <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700"><span>{error}</span><button type="button" onClick={() => { setLoading(true); setRefreshKey((value) => value + 1); }} className="font-semibold">Retry</button></div> : null}
 
         <div className="space-y-3">
           {loading ? (
@@ -168,6 +177,7 @@ export default function RoleNotificationsPage({
                     Mark read
                   </button>
                 ) : null}
+                <Link href={notificationHref(notification.data, apiPrefix)} onClick={() => { if (!notification.readAt) void markNotificationRead(notification.id); }} className="ml-3 text-xs font-semibold text-[#141B34]">Open</Link>
               </div>
             </div>
           ))}

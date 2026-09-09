@@ -2,9 +2,10 @@ import { and, eq } from 'drizzle-orm'
 
 import { database } from '../db/client.js'
 import { notificationPreferences, userRoleEnum } from '../db/schema.js'
+import { notificationCategories, notificationCategory, type NotificationCategory } from './taxonomy.js'
 
-export const notificationCategories = ['orders', 'payments', 'delivery', 'payouts', 'marketing', 'account', 'support'] as const
-export type NotificationCategory = typeof notificationCategories[number]
+export { notificationCategories, notificationCategory, type NotificationCategory } from './taxonomy.js'
+
 export type NotificationRole = typeof userRoleEnum.enumValues[number]
 export type CategoryPreference = { push: boolean; inApp: boolean }
 export type CategoryPreferences = Record<NotificationCategory, CategoryPreference>
@@ -12,16 +13,6 @@ export type CategoryPreferences = Record<NotificationCategory, CategoryPreferenc
 export const defaultCategoryPreferences = Object.fromEntries(
   notificationCategories.map((category) => [category, { push: true, inApp: true }]),
 ) as CategoryPreferences
-
-export function notificationCategory(type: string): NotificationCategory {
-  if (type.includes('payout') || type.includes('commission')) return 'payouts'
-  if (type.includes('payment') || type.includes('refund')) return 'payments'
-  if (type.includes('issue') || type.includes('rejected')) return 'support'
-  if (type.includes('rider') || type.includes('pickup') || type.includes('delivered')) return 'delivery'
-  if (type.includes('order') || type.includes('restaurant_new')) return 'orders'
-  if (type.includes('account') || type.includes('status') || type.includes('tier') || type === 'push_enabled') return 'account'
-  return 'marketing'
-}
 
 export function isCriticalNotification(type: string) {
   return notificationCategory(type) === 'payments' ||

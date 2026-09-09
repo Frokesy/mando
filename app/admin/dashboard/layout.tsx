@@ -128,6 +128,7 @@ const AdminDashboardLayout = ({ children }: { children: React.ReactNode }) => {
       icon: <NotificationIcon size={16} />,
       slug: "notifications",
     },
+    { id: 4, item: "Delivery Health", icon: <NotificationIcon size={16} />, slug: "notification-delivery" },
     { id: 3, item: "Payment Logs", icon: <FinancialsIcon />, slug: "payment-logs" },
   ];
 

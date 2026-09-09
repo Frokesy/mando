@@ -27,5 +27,13 @@ export function pushResponseStatus(error: unknown) {
 
 export function safePushFailureReason(error: unknown) {
   const message = error instanceof Error ? error.message : 'Push delivery failed'
-  return message.replace(/https?:\/\/\S+/gi, '[push endpoint]').slice(0, 500)
+  return redactPushFailureReason(message)
+}
+
+export function redactPushFailureReason(message: string | null) {
+  if (!message) return null
+  return message
+    .replace(/https?:\/\/\S+/gi, '[push endpoint]')
+    .replace(/(authorization|p256dh|auth|token|secret)\s*[:=]\s*\S+/gi, '$1=[redacted]')
+    .slice(0, 500)
 }

@@ -10,6 +10,8 @@ import {
   notificationAllowed,
 } from '../notifications/preferences.js'
 import { pushFailureDecision, pushResponseStatus, safePushFailureReason } from './retry-policy.js'
+import { safeNotificationUrl } from '../notifications/links.js'
+import { notificationPresentation } from '../notifications/presentation.js'
 
 let configured = false
 
@@ -128,11 +130,16 @@ export async function deliverPendingPushNotifications(logger?: DeliveryLogger): 
 
       try {
         const data = (candidate.data ?? {}) as Record<string, unknown>
+        const presentation = notificationPresentation(candidate.type, candidate.title, candidate.body)
         await webpush.sendNotification({ endpoint: candidate.endpoint, keys: { p256dh: candidate.p256dh, auth: candidate.auth } }, JSON.stringify({
-          title: candidate.title,
-          body: candidate.body,
-          url: typeof data.url === 'string' ? data.url : notificationUrl(candidate.role),
+          title: presentation.title,
+          body: presentation.body,
+          url: safeNotificationUrl(candidate.role, data.url),
           notificationId: candidate.notificationId,
+          category: presentation.category,
+          icon: presentation.icon,
+          badge: presentation.badge,
+          role: candidate.role,
         }))
         await database.update(pushDeliveries).set({ status: 'delivered', deliveredAt: new Date(), failedAt: null, nextAttemptAt: null, responseStatus: null, failureReason: null, error: null }).where(eq(pushDeliveries.id, claim.id))
         summary.delivered += 1
@@ -182,10 +189,4 @@ function configureWebPush() {
   webpush.setVapidDetails(subject, publicKey, privateKey)
   configured = true
   return true
-}
-
-function notificationUrl(role: (typeof pushSubscriptions.$inferSelect)['role']) {
-  if (role === 'sales_agent') return '/sales-agent/notifications'
-  if (role === 'admin') return '/admin/dashboard/overview'
-  return `/${role}/notifications`
 }

@@ -22,16 +22,17 @@ export default function PushNotificationControl({
   const trusted = useSyncExternalStore(subscribeToTrustedDevice, getTrustedDeviceSnapshot, getServerTrustedDeviceSnapshot);
   const [enabled, setEnabled] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [permission, setPermission] = useState<NotificationPermission>("default");
 
   useEffect(() => {
     if (supported) {
       void navigator.serviceWorker.ready
-        .then((registration) => registration.pushManager.getSubscription())
-        .then((subscription) => setEnabled(Boolean(subscription)));
+        .then(async (registration) => ({ subscription: await registration.pushManager.getSubscription(), permission: Notification.permission }))
+        .then(({ subscription, permission: currentPermission }) => { setEnabled(Boolean(subscription)); setPermission(currentPermission); });
     }
   }, [supported]);
 
-  if (!supported) return null;
+  if (!supported) return <p className="rounded-xl bg-gray-50 p-3 text-xs leading-5 text-[#6B6B6B]">Push notifications are not available in this browser. On iPhone, add Mando to your Home Screen and open the installed app before enabling push.</p>;
 
   async function togglePush() {
     setBusy(true);
@@ -53,6 +54,7 @@ export default function PushNotificationControl({
       }
 
       const permission = await Notification.requestPermission();
+      setPermission(permission);
       if (permission !== "granted") throw new Error("Notification permission was not granted.");
       const keyResponse = await fetch(`${API_BASE_URL}/push/public-key`, { credentials: "include" });
       if (!keyResponse.ok) throw new Error("Push notifications are not configured yet.");
@@ -90,9 +92,10 @@ export default function PushNotificationControl({
 
   return (
     <div className="flex flex-wrap items-center gap-3">
-      <button type="button" disabled={busy} onClick={() => void togglePush()} className="rounded-xl border border-[#DFB400] px-3 py-2 text-xs font-semibold text-[#9B7D00] disabled:opacity-50">
-        {busy ? "Updating…" : enabled ? "Disable push" : "Enable push"}
+      <button type="button" disabled={busy || (permission === "denied" && !enabled)} onClick={() => void togglePush()} className="rounded-xl border border-[#DFB400] px-3 py-2 text-xs font-semibold text-[#9B7D00] disabled:opacity-50">
+        {busy ? "Updating…" : permission === "denied" && !enabled ? "Push blocked" : enabled ? "Disable push" : "Enable push"}
       </button>
+      {permission === "denied" ? <p className="w-full text-xs leading-5 text-red-600">Notifications are blocked. Enable them in your browser or device settings, then return here.</p> : null}
       {showTrustedOption ? (
         <label className="flex items-center gap-2 text-xs text-[#6B6B6B]">
           <input

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import useNotificationStore from "@/store/notificationStore";
+import { notificationHref } from "@/lib/notificationLinks";
 
 const API_BASE_URL =
   (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000").replace(/\/+$/, "");
@@ -130,7 +131,7 @@ export default function AdminNotificationsPage() {
         {loading ? Array.from({ length: 3 }).map((_, index) => <div key={index} className="h-28 animate-pulse rounded-2xl border border-gray-200 bg-white" />) : null}
         {!loading && !data?.notifications.length ? <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-10 text-center"><div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-full bg-gray-100 text-xl">🔔</div><h3 className="text-sm font-semibold text-[#101828]">You’re all caught up</h3><p className="mt-1 text-xs text-[#667085]">No notifications match this filter.</p></div> : null}
         {!loading && data?.notifications.map((notification) => {
-          const href = notificationUrl(notification.data);
+          const href = notificationHref(notification.data, "admin");
           return (
             <article key={notification.id} className={`rounded-2xl border p-5 shadow-sm ${notification.readAt ? "border-gray-200 bg-white" : "border-amber-200 bg-amber-50/40"}`}>
               <div className="flex items-start justify-between gap-5">
@@ -163,12 +164,6 @@ export default function AdminNotificationsPage() {
       </div>
     </div>
   );
-}
-
-function notificationUrl(data: unknown) {
-  if (!data || typeof data !== "object" || !("url" in data)) return null;
-  const url = (data as { url?: unknown }).url;
-  return typeof url === "string" && url.startsWith("/admin/dashboard/") ? url : null;
 }
 
 function formatDate(value: string) {
