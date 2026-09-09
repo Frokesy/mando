@@ -13,6 +13,7 @@ import { database } from '../db/client.js'
 import { saveRestaurantPayoutAccount } from '../finance/payout-accounts.js'
 import { createAllocatedPayoutRequest } from '../finance/payout-lifecycle.js'
 import { notifyActiveAdmins } from '../notifications/admin.js'
+import { filterInAppNotifications } from '../notifications/preferences.js'
 import {
   authSessions,
   orderIssues,
@@ -757,8 +758,8 @@ function getRestaurantPayoutRequests(restaurantId: string) {
     .limit(10)
 }
 
-function getUserNotifications(userId: string) {
-  return database
+async function getUserNotifications(userId: string) {
+  const rows = await database
     .select({
       id: notifications.id,
       type: notifications.type,
@@ -774,7 +775,8 @@ function getUserNotifications(userId: string) {
       eq(notifications.targetRole, 'restaurant'),
     ))
     .orderBy(desc(notifications.createdAt))
-    .limit(50)
+    .limit(200)
+  return (await filterInAppNotifications(rows, userId, 'restaurant')).slice(0, 50)
 }
 
 async function markUserNotificationRead(userId: string, notificationId: string) {

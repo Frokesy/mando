@@ -1297,6 +1297,26 @@ export const notifications = pgTable(
   ],
 )
 
+export const notificationPreferences = pgTable(
+  'notification_preferences',
+  {
+    userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    role: userRoleEnum('role').notNull(),
+    pushEnabled: boolean('push_enabled').notNull().default(true),
+    inAppEnabled: boolean('in_app_enabled').notNull().default(true),
+    categories: jsonb('categories').notNull().default(sql`'{}'::jsonb`),
+    quietHoursEnabled: boolean('quiet_hours_enabled').notNull().default(false),
+    quietHoursStart: text('quiet_hours_start').notNull().default('22:00'),
+    quietHoursEnd: text('quiet_hours_end').notNull().default('07:00'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [primaryKey({
+    name: 'notification_preferences_user_id_role_pk',
+    columns: [table.userId, table.role],
+  })],
+)
+
 export const pushSubscriptions = pgTable(
   'push_subscriptions',
   {

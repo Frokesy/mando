@@ -6,6 +6,7 @@ import { ArrowLeftIcon } from "@/components/svgs/DefaultIcons";
 import useNotificationStore, { Notification } from "@/store/notificationStore";
 import { useToastStore } from "@/store/toastStore";
 import PushNotificationControl from "@/components/PushNotificationControl";
+import NotificationPreferencesControl from "@/components/NotificationPreferencesControl";
 
 const API_BASE_URL =
   (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000").replace(/\/+$/, "");
@@ -37,6 +38,7 @@ export default function RoleNotificationsPage({
   const showToast = useToastStore((s) => s.showToast);
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState<Filter>("all");
+  const unreadCount = notifications.filter((notification) => !notification.readAt).length;
 
   useEffect(() => {
     let mounted = true;
@@ -88,7 +90,7 @@ export default function RoleNotificationsPage({
 
   return (
     <div className="min-h-screen bg-[#F8F8F8] pb-28">
-      <div className="p-6">
+      <div className="mx-auto max-w-3xl p-4 sm:p-6">
         <header className="mb-6 flex items-center gap-3">
           <Link
             href={backHref}
@@ -100,7 +102,7 @@ export default function RoleNotificationsPage({
             <h1 className="text-2xl font-semibold text-[#141B34]">Notifications</h1>
             <p className="text-sm text-[#6B6B6B]">{notifications.length} total updates</p>
           </div>
-          {notifications.some((notification) => !notification.readAt) ? (
+          {unreadCount > 0 ? (
             <button
               type="button"
               onClick={() => void markEveryNotificationRead()}
@@ -111,17 +113,22 @@ export default function RoleNotificationsPage({
           ) : null}
         </header>
 
-        <div className="mb-4 rounded-2xl border border-gray-200 bg-white p-4">
+        <div className="mb-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
+          <div className="mb-3"><h2 className="font-semibold text-[#141B34]">Push notifications</h2><p className="mt-0.5 text-sm text-[#6B6B6B]">Receive important updates even when Mando is closed.</p></div>
           <PushNotificationControl />
         </div>
 
-        <div className="mb-5 flex gap-2 overflow-x-auto">
+        <div className="mb-5">
+          <NotificationPreferencesControl />
+        </div>
+
+        <div className="mb-5 flex items-center gap-2 overflow-x-auto rounded-2xl border border-gray-200 bg-white p-2 shadow-sm">
           {filters.map((filter) => (
             <button
               key={filter.value}
               type="button"
               onClick={() => setActiveFilter(filter.value)}
-              className={`rounded-2xl px-4 py-2 text-sm font-semibold ${
+              className={`shrink-0 rounded-xl px-4 py-2 text-sm font-semibold transition ${
                 activeFilter === filter.value
                   ? "bg-[#141B34] text-white"
                   : "border border-gray-200 bg-white text-[#6B6B6B]"
@@ -132,25 +139,26 @@ export default function RoleNotificationsPage({
           ))}
         </div>
 
-        <div className="overflow-hidden rounded-2xl bg-white shadow-sm">
+        <div className="space-y-3">
           {loading ? (
-            <div className="px-5 py-4 text-sm text-[#6B6B6B]">Loading notifications...</div>
+            Array.from({ length: 3 }).map((_, index) => <div key={index} className="h-32 animate-pulse rounded-2xl border border-gray-200 bg-white" />)
           ) : null}
 
           {!loading && visibleNotifications.length === 0 ? (
-            <div className="px-5 py-4 text-sm text-[#6B6B6B]">No notifications here.</div>
+            <div className="rounded-2xl border border-dashed border-gray-300 bg-white px-5 py-12 text-center"><div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-full bg-gray-100 text-xl">🔔</div><h2 className="font-semibold text-[#141B34]">You’re all caught up</h2><p className="mt-1 text-sm text-[#6B6B6B]">No notifications match this filter.</p></div>
           ) : null}
 
           {visibleNotifications.map((notification) => (
             <div
               key={notification.id}
-              className={`border-b border-gray-200 px-5 py-4 last:border-b-0 ${
-                notification.readAt ? "bg-white opacity-80" : "bg-white"
+              className={`rounded-2xl border px-5 py-4 shadow-sm transition ${
+                notification.readAt ? "border-gray-200 bg-white opacity-80" : "border-amber-200 bg-amber-50/40"
               }`}
             >
+              <div className="mb-2 flex items-center gap-2"><span className="rounded-full bg-gray-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-gray-600">{notificationLabel(notification.type)}</span>{!notification.readAt ? <span className="text-[10px] font-semibold uppercase tracking-wide text-[#B77900]">New</span> : null}</div>
               <div className="flex items-start justify-between gap-4">
                 <h2 className="text-base font-semibold text-[#141B34]">{notification.title}</h2>
-                {!notification.readAt ? <span className="mt-1 h-3 w-3 rounded-full bg-red-500" /> : null}
+                {!notification.readAt ? <span className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full bg-[#DFB400]" /> : null}
               </div>
               <p className="mt-2 text-sm text-[#6B6B6B]">{notification.body}</p>
               <div className="mt-3 flex items-center justify-between">
@@ -192,4 +200,15 @@ function formatNotificationTime(value: string) {
     hour: "numeric",
     minute: "2-digit",
   }).format(new Date(value));
+}
+
+function notificationLabel(type: string) {
+  const normalized = type.toLowerCase();
+  if (normalized.includes("payout")) return "Payout";
+  if (normalized.includes("payment")) return "Payment";
+  if (normalized.includes("deliver") || normalized.includes("rider")) return "Delivery";
+  if (normalized.includes("order")) return "Order";
+  if (normalized.includes("account") || normalized.includes("security")) return "Account";
+  if (normalized.includes("support")) return "Support";
+  return "Update";
 }

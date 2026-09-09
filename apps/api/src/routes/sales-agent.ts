@@ -17,6 +17,7 @@ import { saveUserPayoutAccount } from '../finance/payout-accounts.js'
 import { createAllocatedPayoutRequest } from '../finance/payout-lifecycle.js'
 import { sendAgentCredentialsEmail } from '../email/agent-credentials.js'
 import { notifyActiveAdmins } from '../notifications/admin.js'
+import { filterInAppNotifications } from '../notifications/preferences.js'
 import {
   authSessions,
   comboCampaigns,
@@ -813,8 +814,8 @@ async function getShareableCombos(agentUserId: string) {
   }))
 }
 
-function getUserNotifications(userId: string) {
-  return database
+async function getUserNotifications(userId: string) {
+  const rows = await database
     .select({
       id: notifications.id,
       type: notifications.type,
@@ -830,7 +831,8 @@ function getUserNotifications(userId: string) {
       eq(notifications.targetRole, 'sales_agent'),
     ))
     .orderBy(desc(notifications.createdAt))
-    .limit(50)
+    .limit(200)
+  return (await filterInAppNotifications(rows, userId, 'sales_agent')).slice(0, 50)
 }
 
 async function markUserNotificationRead(userId: string, notificationId: string) {

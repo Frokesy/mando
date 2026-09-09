@@ -7,6 +7,7 @@ import { serializeClearSessionCookie } from '../auth/index.js'
 import { database } from '../db/client.js'
 import { getRestaurantAvailability } from '../restaurants/availability.js'
 import { notifyActiveAdmins } from '../notifications/admin.js'
+import { filterInAppNotifications } from '../notifications/preferences.js'
 import {
   addresses,
   adminSettings,
@@ -192,7 +193,7 @@ export async function customerRoutes(app: FastifyInstance) {
 
     if (!sessionContext) return
 
-    const userNotifications = await database
+    const notificationRows = await database
       .select({
         id: notifications.id,
         type: notifications.type,
@@ -208,7 +209,12 @@ export async function customerRoutes(app: FastifyInstance) {
         eq(notifications.targetRole, 'customer'),
       ))
       .orderBy(desc(notifications.createdAt))
-      .limit(50)
+      .limit(200)
+    const userNotifications = (await filterInAppNotifications(
+      notificationRows,
+      sessionContext.userId,
+      'customer',
+    )).slice(0, 50)
 
     return reply.status(200).send({
       notifications: userNotifications,

@@ -11,6 +11,7 @@ import {
   verifyPassword,
 } from '../auth/index.js'
 import { getCurrentSessionContext } from '../auth/current-session.js'
+import { filterInAppNotifications } from '../notifications/preferences.js'
 import { database } from '../db/client.js'
 import { isRealizedCommissionStatus } from '../finance/earnings.js'
 import { reviewAllocatedPayoutRequest } from '../finance/payout-lifecycle.js'
@@ -471,18 +472,9 @@ export async function adminRoutes(app: FastifyInstance) {
     if (!query.success) return reply.status(400).send({ error: 'validation_error', message: 'Choose valid notification filters.' })
 
     const adminRoleCondition = eq(notifications.targetRole, 'admin')
-    const statusCondition = query.data.status === 'unread'
-      ? sql`${notifications.readAt} is null`
-      : query.data.status === 'read'
-        ? sql`${notifications.readAt} is not null`
-        : undefined
-    const whereCondition = statusCondition
-      ? and(eq(notifications.userId, auth.userId), adminRoleCondition, statusCondition)
-      : and(eq(notifications.userId, auth.userId), adminRoleCondition)
     const offset = (query.data.page - 1) * query.data.limit
 
-    const [rows, countRows, unreadRows] = await Promise.all([
-      database.select({
+    const allRows = await database.select({
         id: notifications.id,
         type: notifications.type,
         title: notifications.title,
@@ -490,19 +482,21 @@ export async function adminRoutes(app: FastifyInstance) {
         data: notifications.data,
         readAt: notifications.readAt,
         createdAt: notifications.createdAt,
-      }).from(notifications).where(whereCondition).orderBy(desc(notifications.createdAt))
-        .limit(query.data.limit).offset(offset),
-      database.select({ count: sql<number>`count(*)::int` }).from(notifications).where(whereCondition),
-      database.select({ count: sql<number>`count(*)::int` }).from(notifications).where(and(
+      }).from(notifications).where(and(
         eq(notifications.userId, auth.userId),
         adminRoleCondition,
-        sql`${notifications.readAt} is null`,
-      )),
-    ])
-    const total = countRows[0]?.count ?? 0
+      )).orderBy(desc(notifications.createdAt))
+    const visibleRows = await filterInAppNotifications(allRows, auth.userId, 'admin')
+    const unreadCount = visibleRows.filter((notification) => !notification.readAt).length
+    const filteredRows = visibleRows.filter((notification) =>
+      query.data.status === 'all' ||
+      (query.data.status === 'unread' ? !notification.readAt : Boolean(notification.readAt)),
+    )
+    const total = filteredRows.length
+    const rows = filteredRows.slice(offset, offset + query.data.limit)
     return reply.status(200).send({
       notifications: rows,
-      unreadCount: unreadRows[0]?.count ?? 0,
+      unreadCount,
       pagination: {
         page: query.data.page,
         limit: query.data.limit,

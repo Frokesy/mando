@@ -14,6 +14,7 @@ import { canQualifyReferralFromDeliveredOrder } from '../finance/earnings.js'
 import { saveUserPayoutAccount } from '../finance/payout-accounts.js'
 import { createAllocatedPayoutRequest } from '../finance/payout-lifecycle.js'
 import { notifyActiveAdmins } from '../notifications/admin.js'
+import { filterInAppNotifications } from '../notifications/preferences.js'
 import {
   authSessions,
   commissions,
@@ -866,8 +867,8 @@ async function requireRider(cookieHeader: string | undefined, reply: FastifyRepl
   return sessionContext
 }
 
-function getUserNotifications(userId: string) {
-  return database
+async function getUserNotifications(userId: string) {
+  const rows = await database
     .select({
       id: notifications.id,
       type: notifications.type,
@@ -883,7 +884,8 @@ function getUserNotifications(userId: string) {
       eq(notifications.targetRole, 'rider'),
     ))
     .orderBy(desc(notifications.createdAt))
-    .limit(50)
+    .limit(200)
+  return (await filterInAppNotifications(rows, userId, 'rider')).slice(0, 50)
 }
 
 async function markUserNotificationRead(userId: string, notificationId: string) {

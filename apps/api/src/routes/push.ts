@@ -4,15 +4,53 @@ import { z } from 'zod'
 
 import { getCurrentSessionContext } from '../auth/current-session.js'
 import { database } from '../db/client.js'
-import { notifications, pushSubscriptions } from '../db/schema.js'
+import { notificationPreferences, notifications, pushSubscriptions } from '../db/schema.js'
 import { deliverPendingPushNotifications, getPushPublicKey } from '../push/delivery.js'
+import {
+  getNotificationPreferences,
+  notificationCategories,
+} from '../notifications/preferences.js'
 
 const subscriptionSchema = z.object({
   endpoint: z.url(),
   keys: z.object({ p256dh: z.string().min(1), auth: z.string().min(1) }),
 })
+const categoryPreferenceSchema = z.object({ push: z.boolean(), inApp: z.boolean() })
+const preferencesSchema = z.object({
+  pushEnabled: z.boolean(),
+  inAppEnabled: z.boolean(),
+  categories: z.object(Object.fromEntries(
+    notificationCategories.map((category) => [category, categoryPreferenceSchema]),
+  ) as Record<(typeof notificationCategories)[number], typeof categoryPreferenceSchema>),
+  quietHoursEnabled: z.boolean(),
+  quietHoursStart: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+  quietHoursEnd: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+})
 
 export async function pushRoutes(app: FastifyInstance) {
+  app.get('/preferences', async (request, reply) => {
+    const session = await getCurrentSessionContext(request.headers.cookie)
+    if (!session) return reply.status(401).send({ error: 'unauthenticated' })
+    return reply.send({ preferences: await getNotificationPreferences(session.userId, session.activeRole) })
+  })
+
+  app.put('/preferences', async (request, reply) => {
+    const session = await getCurrentSessionContext(request.headers.cookie)
+    if (!session) return reply.status(401).send({ error: 'unauthenticated' })
+    const body = preferencesSchema.safeParse(request.body)
+    if (!body.success) return reply.status(400).send({ error: 'invalid_notification_preferences' })
+
+    await database.insert(notificationPreferences).values({
+      userId: session.userId,
+      role: session.activeRole,
+      ...body.data,
+    }).onConflictDoUpdate({
+      target: [notificationPreferences.userId, notificationPreferences.role],
+      set: { ...body.data, updatedAt: new Date() },
+    })
+    return reply.send({ preferences: await getNotificationPreferences(session.userId, session.activeRole) })
+  })
+
   app.get('/public-key', async (_request, reply) => {
     const publicKey = getPushPublicKey()
     if (!publicKey) return reply.status(503).send({ error: 'push_not_configured' })

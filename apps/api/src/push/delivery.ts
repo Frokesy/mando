@@ -2,7 +2,13 @@ import { and, asc, eq, isNull, lte } from 'drizzle-orm'
 import webpush from 'web-push'
 
 import { database } from '../db/client.js'
-import { notifications, pushDeliveries, pushSubscriptions } from '../db/schema.js'
+import { notificationPreferences, notifications, pushDeliveries, pushSubscriptions } from '../db/schema.js'
+import {
+  isCriticalNotification,
+  isLagosQuietTime,
+  mergeCategoryPreferences,
+  notificationAllowed,
+} from '../notifications/preferences.js'
 
 let configured = false
 
@@ -16,6 +22,7 @@ export async function deliverPendingPushNotifications() {
   const candidates = await database
     .select({
       notificationId: notifications.id,
+      type: notifications.type,
       title: notifications.title,
       body: notifications.body,
       data: notifications.data,
@@ -24,6 +31,11 @@ export async function deliverPendingPushNotifications() {
       p256dh: pushSubscriptions.p256dh,
       auth: pushSubscriptions.auth,
       role: pushSubscriptions.role,
+      pushEnabled: notificationPreferences.pushEnabled,
+      categories: notificationPreferences.categories,
+      quietHoursEnabled: notificationPreferences.quietHoursEnabled,
+      quietHoursStart: notificationPreferences.quietHoursStart,
+      quietHoursEnd: notificationPreferences.quietHoursEnd,
     })
     .from(notifications)
     .innerJoin(pushSubscriptions, and(
@@ -35,6 +47,10 @@ export async function deliverPendingPushNotifications() {
       eq(pushDeliveries.notificationId, notifications.id),
       eq(pushDeliveries.subscriptionId, pushSubscriptions.id),
     ))
+    .leftJoin(notificationPreferences, and(
+      eq(notificationPreferences.userId, notifications.userId),
+      eq(notificationPreferences.role, notifications.targetRole),
+    ))
     .where(and(
       isNull(pushDeliveries.notificationId),
     ))
@@ -42,11 +58,37 @@ export async function deliverPendingPushNotifications() {
     .limit(100)
 
   for (const candidate of candidates) {
+    const preferences = {
+      pushEnabled: candidate.pushEnabled ?? true,
+      inAppEnabled: true,
+      categories: mergeCategoryPreferences(candidate.categories),
+      quietHoursEnabled: candidate.quietHoursEnabled ?? false,
+      quietHoursStart: candidate.quietHoursStart ?? '22:00',
+      quietHoursEnd: candidate.quietHoursEnd ?? '07:00',
+    }
+    if (
+      !isCriticalNotification(candidate.type) &&
+      isLagosQuietTime(
+        new Date(),
+        preferences.quietHoursEnabled,
+        preferences.quietHoursStart,
+        preferences.quietHoursEnd,
+      )
+    ) continue
+
     const [claim] = await database.insert(pushDeliveries).values({
       notificationId: candidate.notificationId,
       subscriptionId: candidate.subscriptionId,
     }).onConflictDoNothing().returning({ notificationId: pushDeliveries.notificationId })
     if (!claim) continue
+
+    if (!notificationAllowed(candidate.type, 'push', preferences)) {
+      await database.update(pushDeliveries).set({ error: 'suppressed_by_preferences' }).where(and(
+        eq(pushDeliveries.notificationId, candidate.notificationId),
+        eq(pushDeliveries.subscriptionId, candidate.subscriptionId),
+      ))
+      continue
+    }
 
     try {
       const data = (candidate.data ?? {}) as Record<string, unknown>
