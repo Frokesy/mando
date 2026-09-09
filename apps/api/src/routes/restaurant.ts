@@ -243,7 +243,10 @@ export async function restaurantRoutes(app: FastifyInstance) {
     await database
       .update(notifications)
       .set({ readAt: new Date() })
-      .where(eq(notifications.userId, context.userId))
+      .where(and(
+        eq(notifications.userId, context.userId),
+        eq(notifications.targetRole, 'restaurant'),
+      ))
 
     return reply.status(204).send()
   })
@@ -344,6 +347,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
 
       await tx.insert(notifications).values({
         userId: order.customerId,
+        targetRole: 'customer',
         type: 'restaurant_rejected_order',
         title: 'Order needs review',
         body: `The restaurant could not accept order ${order.orderNumber}. MANDO admin will follow up.`,
@@ -398,6 +402,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
         await tx.insert(notifications).values(
           availableRiders.map((rider) => ({
             userId: rider.userId,
+            targetRole: 'rider' as const,
             type: 'pickup_ready',
             title: 'Pickup available',
             body: `Order ${order.orderNumber} is ready for pickup at ${context.restaurant.name}.`,
@@ -730,7 +735,10 @@ function getUserNotifications(userId: string) {
       createdAt: notifications.createdAt,
     })
     .from(notifications)
-    .where(eq(notifications.userId, userId))
+    .where(and(
+      eq(notifications.userId, userId),
+      eq(notifications.targetRole, 'restaurant'),
+    ))
     .orderBy(desc(notifications.createdAt))
     .limit(50)
 }
@@ -739,7 +747,11 @@ async function markUserNotificationRead(userId: string, notificationId: string) 
   const [notification] = await database
     .update(notifications)
     .set({ readAt: new Date() })
-    .where(and(eq(notifications.id, notificationId), eq(notifications.userId, userId)))
+    .where(and(
+      eq(notifications.id, notificationId),
+      eq(notifications.userId, userId),
+      eq(notifications.targetRole, 'restaurant'),
+    ))
     .returning({
       id: notifications.id,
       readAt: notifications.readAt,

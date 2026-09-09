@@ -23,6 +23,7 @@ export async function createDailySalesAgentPostReminders(now = new Date()) {
       .from(notifications)
       .where(and(
         eq(notifications.type, SALES_AGENT_POST_REMINDER_TYPE),
+        eq(notifications.targetRole, 'sales_agent'),
         gte(notifications.createdAt, window.dayStart),
         lt(notifications.createdAt, window.dayEnd),
       ))
@@ -44,6 +45,7 @@ export async function createDailySalesAgentPostReminders(now = new Date()) {
 
     await tx.insert(notifications).values(agents.map(({ userId }) => ({
       userId,
+      targetRole: 'sales_agent' as const,
       type: SALES_AGENT_POST_REMINDER_TYPE,
       title: 'Time to post today’s Mando offers',
       body: 'Good morning! Share today’s Mando food offers with your audience and keep your referral link active.',

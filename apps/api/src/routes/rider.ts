@@ -407,6 +407,7 @@ export async function riderRoutes(app: FastifyInstance) {
 
     await database.insert(notifications).values({
       userId: auth.userId,
+      targetRole: 'rider',
       type: 'rider_payout_requested',
       title: 'Payout request sent',
       body: `Your ${formatMoney(payoutRequest.amount)} rider payout request has been sent to admin.`,
@@ -455,7 +456,10 @@ export async function riderRoutes(app: FastifyInstance) {
     await database
       .update(notifications)
       .set({ readAt: new Date() })
-      .where(eq(notifications.userId, auth.userId))
+      .where(and(
+        eq(notifications.userId, auth.userId),
+        eq(notifications.targetRole, 'rider'),
+      ))
 
     return reply.status(204).send()
   })
@@ -738,6 +742,7 @@ async function updateDeliveryAssignment(
         await tx.insert(notifications).values(
           earnedCommissions.map((commission) => ({
             userId: commission.salesAgentId,
+            targetRole: 'sales_agent' as const,
             type: 'commission_earned',
             title: 'Commission earned',
             body: `${formatMoney(commission.commissionAmount)} commission from order ${target.orderNumber} is now earned.`,
@@ -761,6 +766,7 @@ async function updateDeliveryAssignment(
 
       await tx.insert(notifications).values({
         userId: target.customerId,
+        targetRole: 'customer',
         type: 'order_delivered',
         title: 'Order delivered',
         body: `Order ${target.orderNumber} has been delivered.`,
@@ -774,6 +780,7 @@ async function updateDeliveryAssignment(
     if (options.action === 'picked_up') {
       await tx.insert(notifications).values({
         userId: target.customerId,
+        targetRole: 'customer',
         type: 'order_picked_up',
         title: 'Your order has been picked up',
         body: `${rider.profile.fullName} is on the way with order ${target.orderNumber}.${rider.profile.phone ? ` Contact: ${rider.profile.phone}` : ''}`,
@@ -835,7 +842,10 @@ function getUserNotifications(userId: string) {
       createdAt: notifications.createdAt,
     })
     .from(notifications)
-    .where(eq(notifications.userId, userId))
+    .where(and(
+      eq(notifications.userId, userId),
+      eq(notifications.targetRole, 'rider'),
+    ))
     .orderBy(desc(notifications.createdAt))
     .limit(50)
 }
@@ -844,7 +854,11 @@ async function markUserNotificationRead(userId: string, notificationId: string) 
   const [notification] = await database
     .update(notifications)
     .set({ readAt: new Date() })
-    .where(and(eq(notifications.id, notificationId), eq(notifications.userId, userId)))
+    .where(and(
+      eq(notifications.id, notificationId),
+      eq(notifications.userId, userId),
+      eq(notifications.targetRole, 'rider'),
+    ))
     .returning({
       id: notifications.id,
       readAt: notifications.readAt,

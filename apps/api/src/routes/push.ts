@@ -65,6 +65,7 @@ export async function pushRoutes(app: FastifyInstance) {
 
     await database.insert(notifications).values({
       userId: session.userId,
+      targetRole: session.activeRole,
       type: 'push_enabled',
       title: 'Mando notifications are on 🎉',
       body: 'You will now receive important Mando updates on this device.',

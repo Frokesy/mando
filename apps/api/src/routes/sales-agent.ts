@@ -171,6 +171,7 @@ export async function salesAgentRoutes(app: FastifyInstance) {
 
         await tx.insert(notifications).values({
           userId: upline.userId,
+          targetRole: 'sales_agent',
           type: 'sales_agent_downline_application',
           title: 'New sales agent joined',
           body: `${fullName} joined as a sales agent through your influencer referral link.`,
@@ -488,6 +489,7 @@ export async function salesAgentRoutes(app: FastifyInstance) {
 
     await database.insert(notifications).values({
       userId: auth.userId,
+      targetRole: 'sales_agent',
       type: 'agent_payout_requested',
       title: 'Payout request sent',
       body: `Your ${formatMoney(payoutRequest.amount)} commission payout request has been sent to admin.`,
@@ -553,7 +555,10 @@ export async function salesAgentRoutes(app: FastifyInstance) {
     await database
       .update(notifications)
       .set({ readAt: new Date() })
-      .where(eq(notifications.userId, auth.userId))
+      .where(and(
+        eq(notifications.userId, auth.userId),
+        eq(notifications.targetRole, 'sales_agent'),
+      ))
 
     return reply.status(204).send()
   })
@@ -744,6 +749,7 @@ async function qualifyInfluencerIfReady(
 
     await tx.insert(notifications).values({
       userId,
+      targetRole: 'sales_agent',
       type: 'sales_agent_influencer_qualified',
       title: 'Influencer tier unlocked',
       body: 'You now qualify as an influencer. You can share your sales-agent referral link after admin approval of each downline agent.',
@@ -819,7 +825,10 @@ function getUserNotifications(userId: string) {
       createdAt: notifications.createdAt,
     })
     .from(notifications)
-    .where(eq(notifications.userId, userId))
+    .where(and(
+      eq(notifications.userId, userId),
+      eq(notifications.targetRole, 'sales_agent'),
+    ))
     .orderBy(desc(notifications.createdAt))
     .limit(50)
 }
@@ -828,7 +837,11 @@ async function markUserNotificationRead(userId: string, notificationId: string) 
   const [notification] = await database
     .update(notifications)
     .set({ readAt: new Date() })
-    .where(and(eq(notifications.id, notificationId), eq(notifications.userId, userId)))
+    .where(and(
+      eq(notifications.id, notificationId),
+      eq(notifications.userId, userId),
+      eq(notifications.targetRole, 'sales_agent'),
+    ))
     .returning({
       id: notifications.id,
       readAt: notifications.readAt,

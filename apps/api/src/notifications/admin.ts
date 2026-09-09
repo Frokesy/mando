@@ -17,6 +17,7 @@ export async function notifyActiveAdmins(input: {
   if (!admins.length) return
   await database.insert(notifications).values(admins.map((admin) => ({
     userId: admin.userId,
+    targetRole: 'admin' as const,
     type: input.type,
     title: input.title,
     body: input.body,

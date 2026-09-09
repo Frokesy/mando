@@ -603,6 +603,7 @@ async function finalizePaidOrder(
 
     await tx.insert(notifications).values({
       userId: order.customerId,
+      targetRole: 'customer',
       type: 'payment_verified',
       title: 'Payment verified',
       body: `Payment for order ${order.orderNumber} has been verified.`,
@@ -623,6 +624,7 @@ async function finalizePaidOrder(
       await tx.insert(notifications).values(
         restaurantUsers.map((member) => ({
           userId: member.userId,
+          targetRole: 'restaurant' as const,
           type: 'restaurant_new_order',
           title: 'New order awaiting decision',
           body: `Order ${order.orderNumber} is ready for restaurant review.`,

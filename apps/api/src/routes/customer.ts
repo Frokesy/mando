@@ -202,7 +202,10 @@ export async function customerRoutes(app: FastifyInstance) {
         createdAt: notifications.createdAt,
       })
       .from(notifications)
-      .where(eq(notifications.userId, sessionContext.userId))
+      .where(and(
+        eq(notifications.userId, sessionContext.userId),
+        eq(notifications.targetRole, 'customer'),
+      ))
       .orderBy(desc(notifications.createdAt))
       .limit(50)
 
@@ -230,6 +233,7 @@ export async function customerRoutes(app: FastifyInstance) {
         and(
           eq(notifications.id, parsedParams.data.notificationId),
           eq(notifications.userId, sessionContext.userId),
+          eq(notifications.targetRole, 'customer'),
         ),
       )
       .returning({
@@ -255,7 +259,10 @@ export async function customerRoutes(app: FastifyInstance) {
     await database
       .update(notifications)
       .set({ readAt: new Date() })
-      .where(eq(notifications.userId, sessionContext.userId))
+      .where(and(
+        eq(notifications.userId, sessionContext.userId),
+        eq(notifications.targetRole, 'customer'),
+      ))
 
     return reply.status(204).send()
   })
@@ -969,6 +976,7 @@ export async function customerRoutes(app: FastifyInstance) {
 
       await tx.insert(notifications).values({
         userId: sessionContext.userId,
+        targetRole: 'customer',
         type: 'order_created',
         title: 'Order created',
         body: `Order ${order.orderNumber} has been created and is awaiting payment confirmation.`,
@@ -992,6 +1000,7 @@ export async function customerRoutes(app: FastifyInstance) {
           await tx.insert(notifications).values(
             restaurantUsers.map((member) => ({
               userId: member.userId,
+              targetRole: 'restaurant' as const,
               type: 'restaurant_new_order',
               title: 'New order awaiting decision',
               body: `Order ${order.orderNumber} is ready for restaurant review.`,
@@ -1130,6 +1139,7 @@ export async function customerRoutes(app: FastifyInstance) {
 
       await tx.insert(notifications).values({
         userId: sessionContext.userId,
+        targetRole: 'customer',
         type: 'order_cancelled',
         title: 'Order cancelled',
         body: `Order ${order.orderNumber} has been cancelled.`,
@@ -1185,6 +1195,7 @@ export async function customerRoutes(app: FastifyInstance) {
 
     await database.insert(notifications).values({
       userId: sessionContext.userId,
+      targetRole: 'customer',
       type: 'order_issue_reported',
       title: 'Issue reported',
       body: `We received your report for order ${order.orderNumber}.`,

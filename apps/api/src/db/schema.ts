@@ -1282,6 +1282,7 @@ export const notifications = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
+    targetRole: userRoleEnum('target_role').notNull(),
     type: text('type').notNull(),
     title: text('title').notNull(),
     body: text('body').notNull(),
@@ -1291,6 +1292,7 @@ export const notifications = pgTable(
   },
   (table) => [
     index('notifications_user_id_index').on(table.userId),
+    index('notifications_user_role_index').on(table.userId, table.targetRole),
     index('notifications_read_at_index').on(table.readAt),
   ],
 )

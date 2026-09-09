@@ -470,15 +470,15 @@ export async function adminRoutes(app: FastifyInstance) {
     const query = adminNotificationQuerySchema.safeParse(request.query)
     if (!query.success) return reply.status(400).send({ error: 'validation_error', message: 'Choose valid notification filters.' })
 
-    const adminTypeCondition = or(ilike(notifications.type, 'admin\_%'), eq(notifications.type, 'push_enabled'))
+    const adminRoleCondition = eq(notifications.targetRole, 'admin')
     const statusCondition = query.data.status === 'unread'
       ? sql`${notifications.readAt} is null`
       : query.data.status === 'read'
         ? sql`${notifications.readAt} is not null`
         : undefined
     const whereCondition = statusCondition
-      ? and(eq(notifications.userId, auth.userId), adminTypeCondition, statusCondition)
-      : and(eq(notifications.userId, auth.userId), adminTypeCondition)
+      ? and(eq(notifications.userId, auth.userId), adminRoleCondition, statusCondition)
+      : and(eq(notifications.userId, auth.userId), adminRoleCondition)
     const offset = (query.data.page - 1) * query.data.limit
 
     const [rows, countRows, unreadRows] = await Promise.all([
@@ -495,7 +495,7 @@ export async function adminRoutes(app: FastifyInstance) {
       database.select({ count: sql<number>`count(*)::int` }).from(notifications).where(whereCondition),
       database.select({ count: sql<number>`count(*)::int` }).from(notifications).where(and(
         eq(notifications.userId, auth.userId),
-        adminTypeCondition,
+        adminRoleCondition,
         sql`${notifications.readAt} is null`,
       )),
     ])
@@ -520,7 +520,7 @@ export async function adminRoutes(app: FastifyInstance) {
     const [notification] = await database.update(notifications).set({ readAt: new Date() }).where(and(
       eq(notifications.id, params.data.notificationId),
       eq(notifications.userId, auth.userId),
-      or(ilike(notifications.type, 'admin\_%'), eq(notifications.type, 'push_enabled')),
+      eq(notifications.targetRole, 'admin'),
     )).returning({ id: notifications.id, readAt: notifications.readAt })
     if (!notification) return reply.status(404).send({ error: 'notification_not_found', message: 'Notification not found.' })
     return reply.status(200).send({ notification })
@@ -531,7 +531,7 @@ export async function adminRoutes(app: FastifyInstance) {
     if (!auth) return
     await database.update(notifications).set({ readAt: new Date() }).where(and(
       eq(notifications.userId, auth.userId),
-      or(ilike(notifications.type, 'admin\_%'), eq(notifications.type, 'push_enabled')),
+      eq(notifications.targetRole, 'admin'),
       sql`${notifications.readAt} is null`,
     ))
     return reply.status(204).send()
@@ -1802,6 +1802,7 @@ export async function adminRoutes(app: FastifyInstance) {
     if (updatedRequest.userId) {
       await database.insert(notifications).values({
         userId: updatedRequest.userId,
+        targetRole: 'sales_agent',
         type: 'agent_payout_reviewed',
         title: body.data.status === 'approved' ? 'Payout approved' : 'Payout rejected',
         body: body.data.status === 'approved'
