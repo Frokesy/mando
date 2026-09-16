@@ -1020,6 +1020,30 @@ export async function customerRoutes(app: FastifyInstance) {
       return order
     })
 
+    void notifyActiveAdmins({
+      type: 'admin_customer_order_created',
+      title: 'New customer order',
+      body: `Order ${createdOrder.orderNumber} has just been created.`,
+      data: {
+        orderId: createdOrder.id,
+        orderNumber: createdOrder.orderNumber,
+        url: '/admin/dashboard/orders',
+      },
+    }).catch((error) => request.log.error(error, 'Unable to notify admins about new order'))
+
+    if (paymentIsBypassed) {
+      void notifyActiveAdmins({
+        type: 'admin_payment_verified',
+        title: 'Customer payment confirmed',
+        body: `Payment for order ${createdOrder.orderNumber} has been confirmed.`,
+        data: {
+          orderId: createdOrder.id,
+          orderNumber: createdOrder.orderNumber,
+          url: '/admin/dashboard/payment-logs',
+        },
+      }).catch((error) => request.log.error(error, 'Unable to notify admins about confirmed payment'))
+    }
+
     return reply.status(201).send({
       order: createdOrder,
     })
@@ -1100,6 +1124,7 @@ export async function customerRoutes(app: FastifyInstance) {
           and(
             eq(orders.id, order.id),
             eq(orders.customerId, sessionContext.userId),
+            inArray(orders.status, CUSTOMER_CANCELLABLE_ORDER_STATUSES),
           ),
         )
         .returning({
@@ -1111,6 +1136,8 @@ export async function customerRoutes(app: FastifyInstance) {
           createdAt: orders.createdAt,
           placedAt: orders.placedAt,
         })
+
+      if (!updatedOrder) return null
 
       await tx
         .update(payments)
@@ -1155,6 +1182,24 @@ export async function customerRoutes(app: FastifyInstance) {
 
       return updatedOrder
     })
+
+    if (!cancelledOrder) {
+      return reply.status(409).send({
+        error: 'order_not_cancellable',
+        message: 'This order can no longer be cancelled.',
+      })
+    }
+
+    void notifyActiveAdmins({
+      type: 'admin_order_cancelled',
+      title: 'Customer cancelled an order',
+      body: `Order ${cancelledOrder.orderNumber} was cancelled by the customer.`,
+      data: {
+        orderId: cancelledOrder.id,
+        orderNumber: cancelledOrder.orderNumber,
+        url: '/admin/dashboard/orders',
+      },
+    }).catch((error) => request.log.error(error, 'Unable to notify admins about cancelled order'))
 
     return reply.status(200).send({
       order: cancelledOrder,

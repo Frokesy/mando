@@ -5,11 +5,24 @@ import { readFile } from 'node:fs/promises'
 const coverage = {
   customer: {
     file: '../routes/customer.ts',
-    types: ['order_created', 'order_cancelled', 'order_issue_reported', 'admin_customer_order_issue'],
+    types: [
+      'order_created',
+      'order_cancelled',
+      'order_issue_reported',
+      'admin_customer_order_created',
+      'admin_order_cancelled',
+      'admin_customer_order_issue',
+    ],
   },
   payment: {
     file: '../routes/routepay.ts',
-    types: ['payment_verified', 'payment_failed', 'restaurant_new_order', 'admin_payment_failed'],
+    types: [
+      'payment_verified',
+      'payment_failed',
+      'restaurant_new_order',
+      'admin_payment_verified',
+      'admin_payment_failed',
+    ],
   },
   restaurant: {
     file: '../routes/restaurant.ts',
@@ -34,6 +47,7 @@ const coverage = {
       'restaurant_order_picked_up',
       'restaurant_order_delivered',
       'commission_earned',
+      'admin_order_delivered',
     ],
   },
   salesAgent: {

@@ -576,11 +576,20 @@ async function updateDeliveryAssignment(
     )
   }
 
-  await database.transaction(async (tx) => {
-    await tx
+  const deliveryUpdated = await database.transaction(async (tx) => {
+    const expectedDeliveryStatuses = options.action === 'accept'
+      ? ['unassigned', 'available'] as const
+      : [options.action === 'picked_up' ? 'accepted' : 'picked_up'] as const
+    const [updatedDelivery] = await tx
       .update(deliveries)
       .set(deliveryUpdate)
-      .where(eq(deliveries.id, target.deliveryId))
+      .where(and(
+        eq(deliveries.id, target.deliveryId),
+        inArray(deliveries.status, expectedDeliveryStatuses),
+      ))
+      .returning({ id: deliveries.id })
+
+    if (!updatedDelivery) return false
 
     await tx.insert(deliveryStatusEvents).values({
       deliveryId: target.deliveryId,
@@ -830,7 +839,29 @@ async function updateDeliveryAssignment(
         },
       })
     }
+
+    return true
   })
+
+  if (!deliveryUpdated) {
+    return reply.status(409).send({
+      error: 'invalid_delivery_status',
+      message: 'This delivery has already been updated. Refresh and try again.',
+    })
+  }
+
+  if (options.action === 'delivered') {
+    void notifyActiveAdmins({
+      type: 'admin_order_delivered',
+      title: 'Order delivered successfully',
+      body: `Order ${target.orderNumber} has completed delivery.`,
+      data: {
+        orderId: target.orderId,
+        orderNumber: target.orderNumber,
+        url: '/admin/dashboard/orders',
+      },
+    }).catch((error) => console.error('Unable to notify admins about delivered order', error))
+  }
 
   return reply.status(200).send({
     message: options.successMessage,

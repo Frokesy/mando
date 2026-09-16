@@ -213,10 +213,18 @@ async function verifyCheckoutManually(
 
   const verification = await verifyPaymentWithRoutePay(order, request.id, 'manual_verification')
   if (verification === 'successful') {
-    await finalizePaidOrder(order, {
+    const newlyVerified = await finalizePaidOrder(order, {
       actorUserId: sessionContext.userId,
       note: 'Payment independently verified with RoutePay.',
     })
+    if (newlyVerified) {
+      void notifyActiveAdmins({
+        type: 'admin_payment_verified',
+        title: 'Customer payment confirmed',
+        body: `Payment for order ${order.orderNumber} has been confirmed.`,
+        data: { orderId: order.id, orderNumber: order.orderNumber, url: '/admin/dashboard/payment-logs' },
+      }).catch((error) => request.log.error(error, 'Unable to notify admins about confirmed payment'))
+    }
   } else if (verification === 'failed' && order.paymentStatus !== 'verified') {
     const newlyFailed = await database.transaction(async (tx) => {
       const [failedPayment] = await tx.update(payments).set({ status: 'failed', updatedAt: new Date() })
@@ -364,9 +372,17 @@ async function handleRoutePayWebhook(
   )
 
   if (verification === 'successful') {
-    await finalizePaidOrder(payment, {
+    const newlyVerified = await finalizePaidOrder(payment, {
       note: 'Payment independently verified with RoutePay after webhook.',
     })
+    if (newlyVerified) {
+      void notifyActiveAdmins({
+        type: 'admin_payment_verified',
+        title: 'Customer payment confirmed',
+        body: `Payment for order ${payment.orderNumber} has been confirmed.`,
+        data: { orderId: payment.id, orderNumber: payment.orderNumber, url: '/admin/dashboard/payment-logs' },
+      }).catch((error) => request.log.error(error, 'Unable to notify admins about confirmed RoutePay payment'))
+    }
   } else if (verification === 'failed' && payment.paymentStatus !== 'verified') {
     const now = new Date()
     const newlyFailed = await database.transaction(async (tx) => {
@@ -615,11 +631,11 @@ async function finalizePaidOrder(
   order: PayableOrder,
   options: { actorUserId?: string; note: string },
 ) {
-  if (order.status !== 'pending_payment') return
+  if (order.status !== 'pending_payment') return false
 
   const now = new Date()
 
-  await database.transaction(async (tx) => {
+  return database.transaction(async (tx) => {
     const [updatedOrder] = await tx
       .update(orders)
       .set({
@@ -629,7 +645,7 @@ async function finalizePaidOrder(
       .where(and(eq(orders.id, order.id), eq(orders.status, 'pending_payment')))
       .returning({ id: orders.id })
 
-    if (!updatedOrder) return
+    if (!updatedOrder) return false
 
     await tx
       .update(payments)
@@ -679,6 +695,8 @@ async function finalizePaidOrder(
         })),
       )
     }
+
+    return true
   })
 }
 
