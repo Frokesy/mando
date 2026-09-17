@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { and, desc, eq, gte, isNotNull, isNull } from 'drizzle-orm'
+import { and, desc, eq, gte, isNotNull, isNull, ne, sql } from 'drizzle-orm'
 import { z } from 'zod'
 
 import { getCurrentSessionContext } from '../auth/current-session.js'
@@ -15,6 +15,7 @@ import {
 const subscriptionSchema = z.object({
   endpoint: z.url(),
   keys: z.object({ p256dh: z.string().min(1), auth: z.string().min(1) }),
+  refreshOnly: z.boolean().optional(),
 })
 const categoryPreferenceSchema = z.object({ push: z.boolean(), inApp: z.boolean() })
 const preferencesSchema = z.object({
@@ -115,30 +116,60 @@ export async function pushRoutes(app: FastifyInstance) {
     return reply.send({ publicKey })
   })
 
+  app.get('/subscriptions', async (request, reply) => {
+    const session = await getCurrentSessionContext(request.headers.cookie)
+    if (!session) return reply.status(401).send({ error: 'unauthenticated' })
+    const subscriptions = await database.select({ endpoint: pushSubscriptions.endpoint })
+      .from(pushSubscriptions).where(and(
+        eq(pushSubscriptions.userId, session.userId),
+        eq(pushSubscriptions.role, session.activeRole),
+      ))
+    return reply.send({ subscriptions })
+  })
+
   app.post('/subscriptions', async (request, reply) => {
     const session = await getCurrentSessionContext(request.headers.cookie)
     if (!session) return reply.status(401).send({ error: 'unauthenticated' })
     const body = subscriptionSchema.safeParse(request.body)
     if (!body.success) return reply.status(400).send({ error: 'invalid_subscription' })
 
-    await database.insert(pushSubscriptions).values({
-      userId: session.userId,
-      role: session.activeRole,
-      endpoint: body.data.endpoint,
-      p256dh: body.data.keys.p256dh,
-      auth: body.data.keys.auth,
-      userAgent: request.headers['user-agent'] ?? null,
-    }).onConflictDoUpdate({
-      target: pushSubscriptions.endpoint,
-      set: {
+    await database.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${body.data.endpoint}))`)
+      await tx.delete(pushSubscriptions).where(and(
+        eq(pushSubscriptions.endpoint, body.data.endpoint),
+        ne(pushSubscriptions.userId, session.userId),
+      ))
+      if (body.data.refreshOnly) {
+        await tx.update(pushSubscriptions).set({
+          p256dh: body.data.keys.p256dh,
+          auth: body.data.keys.auth,
+          lastUsedAt: new Date(),
+          updatedAt: new Date(),
+        }).where(and(
+          eq(pushSubscriptions.endpoint, body.data.endpoint),
+          eq(pushSubscriptions.userId, session.userId),
+          eq(pushSubscriptions.role, session.activeRole),
+        ))
+        return
+      }
+      // One device may subscribe to several roles of the SAME user.
+      await tx.insert(pushSubscriptions).values({
         userId: session.userId,
         role: session.activeRole,
+        endpoint: body.data.endpoint,
         p256dh: body.data.keys.p256dh,
         auth: body.data.keys.auth,
         userAgent: request.headers['user-agent'] ?? null,
-        lastUsedAt: new Date(),
-        updatedAt: new Date(),
-      },
+      }).onConflictDoUpdate({
+        target: [pushSubscriptions.endpoint, pushSubscriptions.userId, pushSubscriptions.role],
+        set: {
+          p256dh: body.data.keys.p256dh,
+          auth: body.data.keys.auth,
+          userAgent: request.headers['user-agent'] ?? null,
+          lastUsedAt: new Date(),
+          updatedAt: new Date(),
+        },
+      })
     })
     return reply.status(204).send()
   })
@@ -146,13 +177,16 @@ export async function pushRoutes(app: FastifyInstance) {
   app.delete('/subscriptions', async (request, reply) => {
     const session = await getCurrentSessionContext(request.headers.cookie)
     if (!session) return reply.status(401).send({ error: 'unauthenticated' })
-    const body = z.object({ endpoint: z.url() }).safeParse(request.body)
+    const body = z.object({ endpoint: z.url(), allRoles: z.boolean().optional() }).safeParse(request.body)
     if (!body.success) return reply.status(400).send({ error: 'invalid_subscription' })
     await database.delete(pushSubscriptions).where(and(
       eq(pushSubscriptions.endpoint, body.data.endpoint),
       eq(pushSubscriptions.userId, session.userId),
+      ...(body.data.allRoles ? [] : [eq(pushSubscriptions.role, session.activeRole)]),
     ))
-    return reply.status(204).send()
+    const remaining = await database.select({ id: pushSubscriptions.id })
+      .from(pushSubscriptions).where(eq(pushSubscriptions.endpoint, body.data.endpoint))
+    return reply.send({ remainingBindings: remaining.length })
   })
 
   app.post('/test', async (request, reply) => {

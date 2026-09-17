@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mando-cache-v4';
+const CACHE_NAME = 'mando-cache-v5';
 const URLS_TO_CACHE = [
   '/manifest.webmanifest',
   '/manifest-customer.webmanifest',
@@ -68,7 +68,12 @@ self.addEventListener('push', (event) => {
     payload = { title: 'Mando', body: event.data ? event.data.text() : 'You have a new update.' };
   }
 
-  event.waitUntil(self.registration.showNotification(payload.title || 'Mando', {
+  // A provider may wake this worker long after a device reconnects.
+  if (payload.expiresAt && Date.parse(payload.expiresAt) <= Date.now()) return;
+  const roleNames = { customer: 'Customer', sales_agent: 'Sales agent', rider: 'Rider', restaurant: 'Restaurant', admin: 'Admin' };
+  const roleName = roleNames[payload.role];
+
+  event.waitUntil(self.registration.showNotification(roleName ? `Mando ${roleName}: ${payload.title || 'Update'}` : payload.title || 'Mando', {
     body: payload.body || 'You have a new update.',
     icon: payload.icon || '/icons/icon-192.png',
     badge: payload.badge || '/icons/icon-192.png',

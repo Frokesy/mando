@@ -7,6 +7,7 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
+    "start:notifications": "node dist/push/worker.js",
     "lint": "tsc -p tsconfig.json --noEmit",
     "test": "NODE_ENV=test DOTENV_CONFIG_PATH=.env.test tsx --test src/**/*.test.ts",
     "db:check": "tsx src/db/check-connection.ts",

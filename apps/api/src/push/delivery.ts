@@ -1,8 +1,8 @@
-import { and, asc, eq, isNull, lte, or, sql } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNull, lte, or, sql } from 'drizzle-orm'
 import webpush from 'web-push'
 
 import { database } from '../db/client.js'
-import { notificationPreferences, notifications, pushDeliveries, pushSubscriptions } from '../db/schema.js'
+import { notificationPreferences, notifications, pushDeliveries, pushSubscriptions, userRoles, users } from '../db/schema.js'
 import {
   isCriticalNotification,
   isLagosQuietTime,
@@ -12,8 +12,10 @@ import {
 import { pushFailureDecision, pushResponseStatus, safePushFailureReason } from './retry-policy.js'
 import { safeNotificationUrl } from '../notifications/links.js'
 import { notificationPresentation } from '../notifications/presentation.js'
+import { pushMessagePolicy } from './message-policy.js'
 
 let configured = false
+let activeCycle: Promise<DeliverySummary> | undefined
 
 type DeliveryLogger = {
   info?: (details: object, message: string) => void
@@ -29,14 +31,21 @@ type DeliverySummary = {
   invalidSubscriptions: number
   suppressed: number
   processingErrors: number
+  expired: number
 }
 
 export function getPushPublicKey() {
   return process.env.VAPID_PUBLIC_KEY || null
 }
 
-export async function deliverPendingPushNotifications(logger?: DeliveryLogger): Promise<DeliverySummary> {
-  const summary: DeliverySummary = { processed: 0, delivered: 0, retrying: 0, failed: 0, invalidSubscriptions: 0, suppressed: 0, processingErrors: 0 }
+export function deliverPendingPushNotifications(logger?: DeliveryLogger): Promise<DeliverySummary> {
+  if (activeCycle) return activeCycle
+  activeCycle = runDeliveryCycle(logger).finally(() => { activeCycle = undefined })
+  return activeCycle
+}
+
+async function runDeliveryCycle(logger?: DeliveryLogger): Promise<DeliverySummary> {
+  const summary: DeliverySummary = { processed: 0, delivered: 0, retrying: 0, failed: 0, invalidSubscriptions: 0, suppressed: 0, processingErrors: 0, expired: 0 }
   if (!configureWebPush()) {
     logger?.warn?.({ event: 'push_delivery_skipped', reason: 'vapid_not_configured' }, 'Push delivery skipped')
     return summary
@@ -54,6 +63,7 @@ export async function deliverPendingPushNotifications(logger?: DeliveryLogger): 
       title: notifications.title,
       body: notifications.body,
       data: notifications.data,
+      createdAt: notifications.createdAt,
       subscriptionId: pushSubscriptions.id,
       endpoint: pushSubscriptions.endpoint,
       p256dh: pushSubscriptions.p256dh,
@@ -66,6 +76,8 @@ export async function deliverPendingPushNotifications(logger?: DeliveryLogger): 
       quietHoursEnd: notificationPreferences.quietHoursEnd,
     })
     .from(notifications)
+    .innerJoin(users, and(eq(users.id, notifications.userId), inArray(users.status, ['active', 'pending'])))
+    .innerJoin(userRoles, and(eq(userRoles.userId, notifications.userId), eq(userRoles.role, notifications.targetRole)))
     .innerJoin(pushSubscriptions, and(
       eq(pushSubscriptions.userId, notifications.userId),
       eq(pushSubscriptions.role, notifications.targetRole),
@@ -87,7 +99,9 @@ export async function deliverPendingPushNotifications(logger?: DeliveryLogger): 
     .orderBy(asc(notifications.createdAt))
     .limit(100)
 
-  for (const candidate of candidates) {
+  // Bounded parallelism keeps a slow push provider from blocking every role.
+  for (let offset = 0; offset < candidates.length; offset += 10) {
+    await Promise.all(candidates.slice(offset, offset + 10).map(async (candidate) => {
     try {
       const preferences = {
         pushEnabled: candidate.pushEnabled ?? true,
@@ -97,8 +111,6 @@ export async function deliverPendingPushNotifications(logger?: DeliveryLogger): 
         quietHoursStart: candidate.quietHoursStart ?? '22:00',
         quietHoursEnd: candidate.quietHoursEnd ?? '07:00',
       }
-      if (!isCriticalNotification(candidate.type) && isLagosQuietTime(now, preferences.quietHoursEnabled, preferences.quietHoursStart, preferences.quietHoursEnd)) continue
-
       const [claim] = candidate.deliveryId
         ? await database.update(pushDeliveries).set({
           status: 'processing',
@@ -119,13 +131,28 @@ export async function deliverPendingPushNotifications(logger?: DeliveryLogger): 
           attemptCount: 1,
           attemptedAt: now,
         }).onConflictDoNothing().returning({ id: pushDeliveries.id, attemptCount: pushDeliveries.attemptCount })
-      if (!claim) continue
+      if (!claim) return
       summary.processed += 1
+
+      const policy = pushMessagePolicy(candidate.type, candidate.createdAt, new Date(), candidate.role)
+      if (policy.ttl === 0) {
+        await database.update(pushDeliveries).set({ status: 'expired', nextAttemptAt: null, failureReason: 'message_expired', error: 'message_expired' }).where(eq(pushDeliveries.id, claim.id))
+        summary.expired += 1
+        return
+      }
+
+      if (!isCriticalNotification(candidate.type) && isLagosQuietTime(now, preferences.quietHoursEnabled, preferences.quietHoursStart, preferences.quietHoursEnd)) {
+        await database.update(pushDeliveries).set({
+          status: 'retrying', nextAttemptAt: new Date(now.getTime() + 15 * 60_000),
+          attemptCount: claim.attemptCount - 1, failureReason: 'quiet_hours',
+        }).where(eq(pushDeliveries.id, claim.id))
+        return
+      }
 
       if (!notificationAllowed(candidate.type, 'push', preferences)) {
         await database.update(pushDeliveries).set({ status: 'suppressed', error: 'suppressed_by_preferences', failureReason: 'suppressed_by_preferences' }).where(eq(pushDeliveries.id, claim.id))
         summary.suppressed += 1
-        continue
+        return
       }
 
       try {
@@ -140,7 +167,8 @@ export async function deliverPendingPushNotifications(logger?: DeliveryLogger): 
           icon: presentation.icon,
           badge: presentation.badge,
           role: candidate.role,
-        }))
+          expiresAt: policy.expiresAt.toISOString(),
+        }), { TTL: policy.ttl, urgency: policy.urgency, topic: policy.topic, timeout: 10_000 })
         await database.update(pushDeliveries).set({ status: 'delivered', deliveredAt: new Date(), failedAt: null, nextAttemptAt: null, responseStatus: null, failureReason: null, error: null }).where(eq(pushDeliveries.id, claim.id))
         summary.delivered += 1
       } catch (error) {
@@ -157,7 +185,7 @@ export async function deliverPendingPushNotifications(logger?: DeliveryLogger): 
         }).where(eq(pushDeliveries.id, claim.id))
 
         if (decision.status === 'invalid_subscription') {
-          await database.delete(pushSubscriptions).where(eq(pushSubscriptions.id, candidate.subscriptionId))
+          await database.delete(pushSubscriptions).where(eq(pushSubscriptions.endpoint, candidate.endpoint))
           summary.invalidSubscriptions += 1
         } else if (decision.status === 'retrying') {
           summary.retrying += 1
@@ -170,6 +198,7 @@ export async function deliverPendingPushNotifications(logger?: DeliveryLogger): 
       summary.processingErrors += 1
       logger?.error?.({ event: 'push_delivery_processing_error', notificationId: candidate.notificationId, error: safePushFailureReason(error) }, 'Push candidate processing failed')
     }
+    }))
   }
 
   const failureTotal = summary.retrying + summary.failed + summary.invalidSubscriptions + summary.processingErrors

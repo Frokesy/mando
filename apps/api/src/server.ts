@@ -14,7 +14,8 @@ const app = buildApp({ webOrigin })
 try {
   await ensureDatabaseConnection()
   await app.listen({ host, port })
-  const runBackgroundJobs = process.env.NODE_ENV === 'production' || process.env.ENABLE_BACKGROUND_JOBS === 'true'
+  const runBackgroundJobs = process.env.ENABLE_BACKGROUND_JOBS !== 'false'
+    && (process.env.NODE_ENV === 'production' || process.env.ENABLE_BACKGROUND_JOBS === 'true')
   if (runBackgroundJobs) {
     const deliverPush = () => {
       void deliverPendingPushNotifications(app.log).catch((error) => app.log.error(error, 'Push delivery cycle failed'))

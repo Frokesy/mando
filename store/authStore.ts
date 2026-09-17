@@ -117,7 +117,7 @@ export const useAuthStore = create<AuthState>((set) => ({
             method: "DELETE",
             credentials: "include",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ endpoint: subscription.endpoint }),
+            body: JSON.stringify({ endpoint: subscription.endpoint, allRoles: true }),
           }).catch(() => undefined);
           await subscription.unsubscribe().catch(() => false);
         }
@@ -143,6 +143,6 @@ async function syncExistingPushSubscription() {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(subscription.toJSON()),
+    body: JSON.stringify({ ...subscription.toJSON(), refreshOnly: true }),
   });
 }

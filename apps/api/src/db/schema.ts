@@ -1334,7 +1334,7 @@ export const pushSubscriptions = pgTable(
     updatedAt: updatedAt(),
   },
   (table) => [
-    uniqueIndex('push_subscriptions_endpoint_unique').on(table.endpoint),
+    uniqueIndex('push_subscriptions_endpoint_user_role_unique').on(table.endpoint, table.userId, table.role),
     index('push_subscriptions_user_id_index').on(table.userId),
   ],
 )

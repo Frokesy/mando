@@ -31,6 +31,24 @@ Keep production credentials only in the deployment environment. Do not place the
 
 ## Production notification scheduler
 
+### Reliable closed-app push on Railway
+
+Deploy an **always-on notification worker** from this same repository, alongside the API:
+
+1. Apply `apps/api/drizzle/0023_push_role_bindings.sql` to the intended database before deploying the updated API.
+2. Create a Railway service from this repository. Build command: `npm ci && npm run build -w apps/api`. Start command: `npm run start:notifications -w apps/api`. If its root directory is already `apps/api`, use `npm run build` and `npm run start:notifications` instead.
+3. Copy the API's production `DATABASE_URL`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and `VAPID_SUBJECT` into the worker. Set `NODE_ENV=production`. Keep the VAPID key pair stable; the worker and API must use the same keys.
+4. Disable Railway **Serverless/App Sleeping** for the worker. It is a persistent process, not a cron service, and needs no public domain or HTTP healthcheck. Set restart policy to restart on failure. Watch for `notification_worker_started` and `push_delivery_cycle_completed` in its logs.
+5. Set `ENABLE_BACKGROUND_JOBS=false` on the API when using this dedicated worker. Keep the existing authenticated cron as a fallback and for retention cleanup; it is not the primary low-latency sender.
+
+The worker checks reminders and pushes every five seconds, independent of browser sessions. Database claims prevent concurrent API/cron/worker sends from claiming the same notification at once. Push provider acceptance (`delivered`) is **not** proof that a device displayed a notification. Device internet connectivity, permission, Focus/DND, force-stopping the browser, and platform background restrictions still affect arrival.
+
+After deployment, open each role's profile once and enable push for that role on the device. Roles belonging to the same user can share the browser transport without overwriting each other. Logging into a different user removes the former user's bindings on subscription refresh. Disabling one role preserves other enabled roles. Logout removes all bindings on an untrusted device; the private-device option retains them deliberately.
+
+Posting reminders expire at Lagos midnight; other push alerts expire after 48 hours. Expiry affects push only, not the notification centre. Quiet-hour messages are deferred without blocking the rest of the queue. Provider sends have bounded timeouts, parallelism, and TTLs.
+
+Verify production with Mando fully closed: trigger a customer order, its verified payment, a cancellation, and a completed delivery; check the corresponding admin device. Repeat for customer, rider, restaurant, and sales-agent events, then check the sales-agent reminder at 9 AM Lagos time without opening Mando. Switch roles and confirm titles and click destinations match the intended role. On iPhone, enable permission from the installed Home Screen app. If arrival is delayed, inspect worker uptime and push-delivery health before attributing it to the browser.
+
 Scheduled notifications can be triggered independently of the API process through:
 
 ```text
